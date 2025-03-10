@@ -1,66 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
+import { useCreateMealPlan } from '../hooks/useMealPlanning';
+import { MealPlan, Recipe } from '../types';
 
-// Mock recipe data
-const MOCK_RECIPES = [
-  {
-    id: '1',
-    title: 'Spaghetti Carbonara',
-    description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
-    ingredients: ['Spaghetti', 'Eggs', 'Pancetta', 'Parmesan cheese', 'Black pepper', 'Salt'],
-    instructions: [
-      'Cook spaghetti according to package instructions.',
-      'In a bowl, whisk eggs and grated cheese.',
-      'Cook pancetta until crispy.',
-      'Combine pasta, egg mixture, and pancetta. Toss quickly.',
-      'Season with black pepper and serve immediately.'
-    ],
-    prep_time_minutes: 10,
-    cook_time_minutes: 15,
-    servings: 4,
-    tags: ['Italian', 'Pasta', 'Quick'],
-    cuisine: 'Italian',
-    difficulty: 'Easy',
-  },
-  {
-    id: '2',
-    title: 'Chicken Stir Fry',
-    description: 'A quick and healthy stir fry with chicken and vegetables.',
-    ingredients: ['Chicken breast', 'Bell peppers', 'Broccoli', 'Carrots', 'Soy sauce', 'Garlic', 'Ginger'],
-    instructions: [
-      'Slice chicken and vegetables.',
-      'Heat oil in a wok or large pan.',
-      'Stir-fry chicken until cooked through.',
-      'Add vegetables and stir-fry until tender-crisp.',
-      'Add sauce and toss to combine.'
-    ],
-    prep_time_minutes: 15,
-    cook_time_minutes: 10,
-    servings: 4,
-    tags: ['Asian', 'Chicken', 'Quick', 'Healthy'],
-    cuisine: 'Asian',
-    difficulty: 'Easy',
-  },
-  {
-    id: '3',
-    title: 'Vegetable Curry',
-    description: 'A flavorful vegetarian curry with mixed vegetables and spices.',
-    ingredients: ['Potatoes', 'Carrots', 'Peas', 'Cauliflower', 'Curry powder', 'Coconut milk', 'Onion', 'Garlic'],
-    instructions: [
-      'Sauté onions and garlic until soft.',
-      'Add curry powder and cook until fragrant.',
-      'Add vegetables and stir to coat with spices.',
-      'Pour in coconut milk and simmer until vegetables are tender.',
-      'Serve with rice or naan bread.'
-    ],
-    prep_time_minutes: 20,
-    cook_time_minutes: 30,
-    servings: 6,
-    tags: ['Indian', 'Vegetarian', 'Spicy'],
-    cuisine: 'Indian',
-    difficulty: 'Medium',
-  },
-];
+// Remove mock recipe data
 
 interface LocationState {
   ingredients?: string[];
@@ -69,11 +12,12 @@ interface LocationState {
 const MealPlanPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
+  const createMealPlanMutation = useCreateMealPlan();
   
   const [availableIngredients, setAvailableIngredients] = useState<string[]>(state?.ingredients || []);
   const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
   const [days, setDays] = useState(7);
-  const [mealPlan, setMealPlan] = useState<typeof MOCK_RECIPES | null>(null);
+  const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [planName, setPlanName] = useState('My Meal Plan');
   const [missingIngredients, setMissingIngredients] = useState<string[]>([]);
@@ -116,41 +60,27 @@ const MealPlanPage = () => {
   };
 
   // Generate meal plan
-  const handleGeneratePlan = () => {
+  const handleGeneratePlan = async () => {
     setIsLoading(true);
     
-    // Simulate API call
-    setTimeout(() => {
-      // Filter recipes based on dietary preferences
-      let filteredRecipes = [...MOCK_RECIPES];
+    try {
+      // Create meal plan data
+      const mealPlanData = {
+        name: planName,
+        days: days,
+        dietary_preferences: dietaryPreferences,
+        available_ingredients: availableIngredients
+      };
       
-      if (dietaryPreferences.includes('Vegetarian')) {
-        filteredRecipes = filteredRecipes.filter(recipe => 
-          !recipe.ingredients.some(ingredient => 
-            ['Chicken', 'Beef', 'Pork', 'Fish', 'Pancetta'].some(meat => 
-              ingredient.toLowerCase().includes(meat.toLowerCase())
-            )
-          )
-        );
-      }
+      // Call the API to create a meal plan
+      const response = await createMealPlanMutation.mutateAsync(mealPlanData);
       
-      // In a real app, we would apply more filters based on other dietary preferences
-      
-      // Randomly select recipes for the meal plan
-      const selectedRecipes = [];
-      const availableRecipes = [...filteredRecipes];
-      
-      for (let i = 0; i < Math.min(days, availableRecipes.length); i++) {
-        const randomIndex = Math.floor(Math.random() * availableRecipes.length);
-        selectedRecipes.push(availableRecipes[randomIndex]);
-        availableRecipes.splice(randomIndex, 1);
-        
-        if (availableRecipes.length === 0) break;
-      }
+      // Set the meal plan data
+      setMealPlan(response);
       
       // Calculate missing ingredients
       const allRequiredIngredients = new Set(
-        selectedRecipes.flatMap(recipe => recipe.ingredients.map(i => i.toLowerCase()))
+        response.recipes.flatMap(recipe => recipe.ingredients.map(i => i.toLowerCase()))
       );
       
       const availableIngredientsLower = availableIngredients.map(i => i.toLowerCase());
@@ -159,10 +89,12 @@ const MealPlanPage = () => {
           ingredient.includes(avail) || avail.includes(ingredient)
         ));
       
-      setMealPlan(selectedRecipes);
       setMissingIngredients(missingIngredientsArray);
+    } catch (error) {
+      console.error('Failed to generate meal plan:', error);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -306,7 +238,7 @@ const MealPlanPage = () => {
                 <h2 className="text-xl font-bold text-gray-900">{planName}</h2>
                 
                 <div className="mt-6 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                  {mealPlan.map((recipe, index) => (
+                  {mealPlan.recipes.map((recipe, index) => (
                     <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
                       <div className="p-5">
                         <div className="flex justify-between items-start">

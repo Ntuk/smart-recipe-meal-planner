@@ -15,6 +15,22 @@ services:
     networks:
       - recipe-network
 
+  # Authentication Service
+  auth-service:
+    build:
+      context: ./backend/auth-service
+    container_name: auth-service
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
+      - DATABASE_NAME=recipe_db
+      - SECRET_KEY=your-secret-key-change-in-production
+    depends_on:
+      - mongodb
+    networks:
+      - recipe-network
+
   # Recipe Service
   recipe-service:
     build:
@@ -87,10 +103,29 @@ services:
     ports:
       - "3000:3000"
     depends_on:
+      - auth-service
       - recipe-service
       - ingredient-scanner-service
       - meal-planning-service
       - shopping-list-service
+    networks:
+      - recipe-network
+
+  # API Gateway
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - auth-service
+      - recipe-service
+      - ingredient-scanner-service
+      - meal-planning-service
+      - shopping-list-service
+      - frontend
     networks:
       - recipe-network
 

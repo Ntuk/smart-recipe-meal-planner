@@ -8,6 +8,59 @@ const api = axios.create({
   },
 });
 
+// Add request interceptor to include auth token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Authentication Service API
+export const authApi = {
+  // Register a new user
+  register: async (userData: { username: string; email: string; password: string }) => {
+    const response = await api.post('/auth/register', userData);
+    return response.data;
+  },
+  
+  // Login user
+  login: async (credentials: { email: string; password: string }) => {
+    const response = await api.post('/auth/login', credentials);
+    // Store token in localStorage
+    if (response.data.token) {
+      localStorage.setItem('auth_token', response.data.token);
+    }
+    return response.data;
+  },
+  
+  // Logout user
+  logout: () => {
+    localStorage.removeItem('auth_token');
+  },
+  
+  // Get current user profile
+  getProfile: async () => {
+    const response = await api.get('/auth/profile');
+    return response.data;
+  },
+  
+  // Update user profile
+  updateProfile: async (profileData: any) => {
+    const response = await api.put('/auth/profile', profileData);
+    return response.data;
+  },
+  
+  // Check if user is authenticated
+  isAuthenticated: () => {
+    return !!localStorage.getItem('auth_token');
+  },
+};
+
 // Recipe Service API
 export const recipeApi = {
   // Get all recipes with optional filters

@@ -1,8 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useCreateShoppingList, useShoppingList, useCheckShoppingListItem, useDeleteShoppingList } from '../hooks/useShoppingList';
+import { ShoppingListItem } from '../types';
+import { v4 as uuidv4 } from 'uuid';
 
 interface LocationState {
   ingredients?: string[];
+  mealPlanId?: string;
 }
 
 interface ShoppingItem {
@@ -39,50 +43,115 @@ const ShoppingListPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
   
-  const [items, setItems] = useState<ShoppingItem[]>([]);
+  const createShoppingListMutation = useCreateShoppingList();
+  const checkItemMutation = useCheckShoppingListItem();
+  const deleteShoppingListMutation = useDeleteShoppingList();
+  
+  const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [newItem, setNewItem] = useState('');
   const [listName, setListName] = useState('My Shopping List');
   const [showChecked, setShowChecked] = useState(true);
+  const [shoppingListId, setShoppingListId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  const { data: shoppingListData, isLoading: isLoadingList } = useShoppingList(shoppingListId || '', {
+    enabled: !!shoppingListId
+  });
   
   // Initialize shopping list from passed ingredients
   useEffect(() => {
     if (state?.ingredients && state.ingredients.length > 0) {
+      // Format items for display while we wait for API
       const formattedItems = state.ingredients.map(ingredient => ({
-        id: Math.random().toString(36).substring(2, 9),
+        id: uuidv4(),
         name: ingredient.charAt(0).toUpperCase() + ingredient.slice(1),
         checked: false,
-        category: categorizeIngredient(ingredient),
+        category: categorizeIngredient(ingredient)
       }));
       
       setItems(formattedItems);
-    }
-  }, [state?.ingredients]);
-  
-  // Add new item to the list
-  const handleAddItem = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (newItem.trim()) {
-      const formattedItem = newItem.trim();
-      const newItemObj: ShoppingItem = {
-        id: Math.random().toString(36).substring(2, 9),
-        name: formattedItem.charAt(0).toUpperCase() + formattedItem.slice(1),
-        checked: false,
-        category: categorizeIngredient(formattedItem),
-      };
       
-      setItems(prev => [...prev, newItemObj]);
-      setNewItem('');
+      // If we have a meal plan ID, create a shopping list
+      if (state.mealPlanId) {
+        createShoppingList(state.mealPlanId, formattedItems.map(item => item.name));
+      }
+    }
+  }, [state]);
+  
+  // Update items when shopping list data changes
+  useEffect(() => {
+    if (shoppingListData) {
+      setItems(shoppingListData.items);
+      setListName(shoppingListData.name);
+    }
+  }, [shoppingListData]);
+  
+  // Create a shopping list
+  const createShoppingList = async (mealPlanId: string, ingredients: string[]) => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await createShoppingListMutation.mutateAsync({
+        meal_plan_id: mealPlanId,
+        name: listName,
+        available_ingredients: []
+      });
+      
+      setShoppingListId(response.id);
+    } catch (err) {
+      setError('Failed to create shopping list');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
     }
   };
   
-  // Toggle item checked status
-  const toggleItemChecked = (id: string) => {
+  const handleAddItem = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newItem.trim()) return;
+    
+    const item: ShoppingListItem = {
+      id: uuidv4(),
+      name: newItem.trim(),
+      checked: false,
+      category: categorizeIngredient(newItem)
+    };
+    
+    setItems(prev => [...prev, item]);
+    setNewItem('');
+  };
+  
+  const toggleItemChecked = async (id: string) => {
+    // Optimistically update UI
     setItems(prev => 
       prev.map(item => 
         item.id === id ? { ...item, checked: !item.checked } : item
       )
     );
+    
+    // If we have a shopping list ID, update the item on the server
+    if (shoppingListId) {
+      try {
+        const itemToToggle = items.find(item => item.id === id);
+        if (itemToToggle) {
+          await checkItemMutation.mutateAsync({
+            shoppingListId,
+            ingredient: itemToToggle.name,
+            checked: !itemToToggle.checked
+          });
+        }
+      } catch (err) {
+        // Revert on error
+        setItems(prev => 
+          prev.map(item => 
+            item.id === id ? { ...item, checked: !item.checked } : item
+          )
+        );
+        console.error('Failed to update item:', err);
+      }
+    }
   };
   
   // Remove item from the list

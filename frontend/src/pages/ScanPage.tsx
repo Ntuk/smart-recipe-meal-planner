@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ingredientScannerApi } from '../services/api';
 
 const ScanPage = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -31,30 +32,9 @@ const ScanPage = () => {
     setError(null);
 
     try {
-      // In a real app, we would call our API here
-      // For now, we'll simulate a response
-      setTimeout(() => {
-        setIngredients(['Tomatoes', 'Onions', 'Garlic', 'Olive Oil', 'Pasta']);
-        setIsLoading(false);
-      }, 1500);
-
-      // Example of how the actual API call would look:
-      /*
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await fetch('/api/ingredients/scan', {
-        method: 'POST',
-        body: formData,
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to scan ingredients');
-      }
-      
-      const data = await response.json();
-      setIngredients(data.ingredients);
-      */
+      // Call the actual API using the service
+      const response = await ingredientScannerApi.scanIngredients(file);
+      setIngredients(response.ingredients);
     } catch (err) {
       setError('Failed to scan ingredients. Please try again.');
       console.error(err);
@@ -63,7 +43,7 @@ const ScanPage = () => {
     }
   };
 
-  const handleManualSubmit = (e: React.FormEvent) => {
+  const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualInput.trim()) {
       setError('Please enter some ingredients');
@@ -73,16 +53,16 @@ const ScanPage = () => {
     setIsLoading(true);
     setError(null);
 
-    // Split by commas and trim whitespace
-    const ingredientList = manualInput
-      .split(',')
-      .map(item => item.trim())
-      .filter(item => item.length > 0);
-
-    setTimeout(() => {
-      setIngredients(ingredientList);
+    try {
+      // Call the actual API using the service
+      const response = await ingredientScannerApi.manualInput(manualInput);
+      setIngredients(response.ingredients);
+    } catch (err) {
+      setError('Failed to process ingredients. Please try again.');
+      console.error(err);
+    } finally {
       setIsLoading(false);
-    }, 500);
+    }
   };
 
   return (
