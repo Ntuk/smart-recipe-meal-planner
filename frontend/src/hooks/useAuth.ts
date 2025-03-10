@@ -1,6 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { authApi } from '../services/api';
+import { useState, useCallback, useEffect } from 'react';
 
 interface User {
   id: string;
@@ -12,125 +10,101 @@ interface User {
   };
 }
 
-interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
-  error: string | null;
-}
-
 export const useAuth = () => {
-  const queryClient = useQueryClient();
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    isAuthenticated: authApi.isAuthenticated(),
-    isLoading: true,
-    error: null,
-  });
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch user profile if authenticated
-  const { data: user, isLoading, error } = useQuery({
-    queryKey: ['user'],
-    queryFn: authApi.getProfile,
-    enabled: authState.isAuthenticated,
-    retry: false,
-    onError: () => {
-      // If token is invalid, log out
-      authApi.logout();
-      setAuthState(prev => ({
-        ...prev,
-        isAuthenticated: false,
-        user: null,
-      }));
-    }
-  });
+  // Mock implementation for development
+  const register = useCallback((userData: { username: string; email: string; password: string }) => {
+    setIsLoading(true);
+    setError(null);
+    
+    // Simulate API call
+    setTimeout(() => {
+      const mockUser: User = {
+        id: '1',
+        username: userData.username,
+        email: userData.email,
+        preferences: {
+          dietary_preferences: [],
+          favorite_cuisines: []
+        }
+      };
+      
+      setUser(mockUser);
+      setIsLoading(false);
+      // Store in localStorage to persist across refreshes
+      localStorage.setItem('user', JSON.stringify(mockUser));
+    }, 1000);
+  }, []);
 
-  // Update auth state when user data changes
-  useEffect(() => {
-    if (!isLoading) {
-      setAuthState(prev => ({
-        ...prev,
-        user,
-        isLoading,
-        error: error ? (error as Error).message : null,
-      }));
-    }
-  }, [user, isLoading, error]);
+  const login = useCallback((credentials: { email: string; password: string }) => {
+    setIsLoading(true);
+    setError(null);
+    
+    // Simulate API call
+    setTimeout(() => {
+      const mockUser: User = {
+        id: '1',
+        username: 'user',
+        email: credentials.email,
+        preferences: {
+          dietary_preferences: ['Vegetarian'],
+          favorite_cuisines: ['Italian', 'Mexican']
+        }
+      };
+      
+      setUser(mockUser);
+      setIsLoading(false);
+      // Store in localStorage to persist across refreshes
+      localStorage.setItem('user', JSON.stringify(mockUser));
+    }, 1000);
+  }, []);
 
-  // Register mutation
-  const registerMutation = useMutation({
-    mutationFn: authApi.register,
-    onSuccess: (data) => {
-      setAuthState({
-        user: data.user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      });
-      queryClient.setQueryData(['user'], data.user);
-    },
-    onError: (error) => {
-      setAuthState(prev => ({
-        ...prev,
-        error: (error as Error).message,
-        isLoading: false,
-      }));
-    }
-  });
-
-  // Login mutation
-  const loginMutation = useMutation({
-    mutationFn: authApi.login,
-    onSuccess: (data) => {
-      setAuthState({
-        user: data.user,
-        isAuthenticated: true,
-        isLoading: false,
-        error: null,
-      });
-      queryClient.setQueryData(['user'], data.user);
-    },
-    onError: (error) => {
-      setAuthState(prev => ({
-        ...prev,
-        error: (error as Error).message,
-        isLoading: false,
-      }));
-    }
-  });
-
-  // Update profile mutation
-  const updateProfileMutation = useMutation({
-    mutationFn: authApi.updateProfile,
-    onSuccess: (data) => {
-      setAuthState(prev => ({
-        ...prev,
-        user: data,
-      }));
-      queryClient.setQueryData(['user'], data);
-    }
-  });
-
-  // Logout function
   const logout = useCallback(() => {
-    authApi.logout();
-    queryClient.removeQueries({ queryKey: ['user'] });
-    setAuthState({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-    });
-  }, [queryClient]);
+    setUser(null);
+    localStorage.removeItem('user');
+  }, []);
+
+  const updateProfile = useCallback((profileData: any) => {
+    setIsLoading(true);
+    setError(null);
+    
+    // Simulate API call
+    setTimeout(() => {
+      if (user) {
+        const updatedUser = {
+          ...user,
+          ...profileData,
+        };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+      setIsLoading(false);
+    }, 1000);
+  }, [user]);
+
+  // Check if user is already logged in (from localStorage)
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch (e) {
+        localStorage.removeItem('user');
+      }
+    }
+  }, []);
 
   return {
-    user: authState.user,
-    isAuthenticated: authState.isAuthenticated,
-    isLoading: authState.isLoading || registerMutation.isPending || loginMutation.isPending,
-    error: authState.error,
-    register: registerMutation.mutate,
-    login: loginMutation.mutate,
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    error,
+    register,
+    login,
     logout,
-    updateProfile: updateProfileMutation.mutate,
+    updateProfile,
   };
 }; 
