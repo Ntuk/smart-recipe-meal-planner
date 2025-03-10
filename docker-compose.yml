@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # MongoDB database
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    networks:
+      - recipe-network
+
+  # Recipe Service
+  recipe-service:
+    build:
+      context: ./backend/recipe-service
+    container_name: recipe-service
+    ports:
+      - "8001:8000"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
+      - DATABASE_NAME=recipe_db
+    depends_on:
+      - mongodb
+    networks:
+      - recipe-network
+
+  # Ingredient Scanner Service
+  ingredient-scanner-service:
+    build:
+      context: ./backend/ingredient-scanner-service
+    container_name: ingredient-scanner-service
+    ports:
+      - "8002:8000"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
+      - DATABASE_NAME=recipe_db
+    depends_on:
+      - mongodb
+    networks:
+      - recipe-network
+
+  # Meal Planning Service
+  meal-planning-service:
+    build:
+      context: ./backend/meal-planning-service
+    container_name: meal-planning-service
+    ports:
+      - "8003:8000"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
+      - DATABASE_NAME=recipe_db
+      - RECIPE_SERVICE_URL=http://recipe-service:8000
+    depends_on:
+      - mongodb
+      - recipe-service
+    networks:
+      - recipe-network
+
+  # Shopping List Service
+  shopping-list-service:
+    build:
+      context: ./backend/shopping-list-service
+    container_name: shopping-list-service
+    ports:
+      - "8004:8000"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
+      - DATABASE_NAME=recipe_db
+      - MEAL_PLANNING_SERVICE_URL=http://meal-planning-service:8000
+    depends_on:
+      - mongodb
+      - meal-planning-service
+    networks:
+      - recipe-network
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - recipe-service
+      - ingredient-scanner-service
+      - meal-planning-service
+      - shopping-list-service
+    networks:
+      - recipe-network
+
+networks:
+  recipe-network:
+    driver: bridge
+
+volumes:
+  mongodb_data: 
