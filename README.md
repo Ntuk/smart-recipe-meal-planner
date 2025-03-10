@@ -8,10 +8,31 @@ The system consists of four key microservices:
 
 | Microservice | Responsibilities |
 |--------------|------------------|
-| Recipe Service | Stores & retrieves recipes, categories, and nutritional information |
 | Ingredient Scanner Service | Uses OCR to detect ingredients from uploaded images (e.g., grocery lists, fridge contents) |
+| Recipe Service | Stores & retrieves recipes, categories, and nutritional information |
 | Meal Planning Service | Suggests meal plans based on available ingredients, dietary preferences, and user history |
 | Shopping List Service | Creates a grocery list for missing ingredients based on meal selection |
+
+### Architecture Diagram
+
+![Smart Recipe & Meal Planner Architecture](frontend/docs/images/microservices_architecture.png)
+
+### Data Flow & Communication
+
+The system follows a hybrid communication model, combining REST APIs for synchronous interactions and RabbitMQ/Kafka for asynchronous messaging.
+
+#### API Flow (REST Communication)
+
+- Frontend → Recipe Service: Fetch available recipes (GET /recipes)
+- Frontend → Ingredient Scanner Service: Upload an image for OCR processing (POST /scan)
+- Frontend → Meal Planning Service: Request meal plan suggestions (POST /plan)
+- Frontend → Shopping List Service: Retrieve shopping lists (GET /shopping-list)
+
+#### Event Flow (Message Queue - Optional)
+
+- Ingredient Scanner Service publishes IngredientExtracted event → Recipe Service updates ingredient data
+- Meal Planning Service publishes MealPlanCreated event → Shopping List Service generates a list
+- Shopping List Service publishes ShoppingListUpdated event → Frontend gets real-time updates
 
 ## Tech Stack
 
@@ -20,6 +41,26 @@ The system consists of four key microservices:
 - **Database**: MongoDB
 - **OCR**: Tesseract OCR or Google Vision API
 - **Messaging** (optional): RabbitMQ/Kafka for event-driven architecture
+
+## Database Schema (MongoDB)
+
+Each microservice has its own MongoDB collection:
+
+- **recipes**: Stores recipes and ingredients
+- **scanned_ingredients**: Stores extracted OCR data
+- **meal_plans**: Stores generated meal plans
+- **shopping_lists**: Stores shopping list details
+
+Example schema for a Recipe document:
+```json
+{
+  "_id": "ObjectId(123456)",
+  "name": "Spaghetti Bolognese",
+  "ingredients": ["Tomatoes", "Minced Meat", "Garlic", "Pasta"],
+  "instructions": "Cook pasta and mix with sauce.",
+  "created_at": "2025-03-10T12:00:00Z"
+}
+```
 
 ## Setup Instructions
 
@@ -71,6 +112,9 @@ uvicorn main:app --reload --port 8001
 ```
 smart-recipe-meal-planner/
 ├── frontend/                 # React frontend application
+│   ├── src/                  # React components and code
+│   ├── docs/                 # Architecture documentation
+│   └── public/               # Static assets
 ├── backend/                  # Backend services
 │   ├── recipe-service/       # Recipe database service
 │   ├── ingredient-scanner-service/ # OCR ingredient detection
@@ -85,6 +129,18 @@ smart-recipe-meal-planner/
 - `/api/ingredients/scan` - Ingredient scanning
 - `/api/meal-plans` - Meal planning
 - `/api/shopping-list` - Shopping list generation
+
+## Security Considerations
+
+- Authentication: OAuth/JWT-based authentication for API access
+- Rate Limiting: Prevent excessive API requests with rate limiting middleware
+- CORS Handling: Ensure proper Cross-Origin Resource Sharing (CORS) configuration
+
+## Future Enhancements
+
+- Implement GraphQL API for flexible data fetching
+- Add monitoring service (e.g., Prometheus + Grafana) for performance tracking
+- Enhance AI-based ingredient suggestions for meal planning
 
 ## License
 
