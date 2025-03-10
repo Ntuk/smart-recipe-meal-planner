@@ -17,6 +17,7 @@ Following Domain-Driven Design (DDD) principles, we identified the following bou
 
 | Bounded Context | Microservice | Core Responsibilities |
 |-----------------|--------------|----------------------|
+| User Management | Authentication Service | User registration, login, profile management |
 | Ingredient Management | Ingredient Scanner Service | Extracts ingredients from images using OCR, manages user's available ingredients |
 | Recipe Catalog | Recipe Service | Stores and retrieves recipes, provides search and filtering capabilities |
 | Meal Planning | Meal Planning Service | Generates meal plans based on available ingredients and user preferences |
@@ -24,7 +25,7 @@ Following Domain-Driven Design (DDD) principles, we identified the following bou
 
 ## Microservices Architecture
 
-![Smart Recipe & Meal Planner Architecture](frontend/docs/images/microservices_architecture.png)
+![Smart Recipe & Meal Planner Architecture](frontend/docs/images/architecture.png)
 
 ### Data Flow & Communication
 
@@ -32,6 +33,7 @@ The system implements a hybrid communication model:
 
 #### Synchronous Communication (REST APIs)
 
+- **Frontend → Auth Service**: User registration, login, profile management
 - **Frontend → Recipe Service**: Fetch recipes, filter by ingredients/tags
 - **Frontend → Ingredient Scanner Service**: Upload images for OCR processing
 - **Frontend → Meal Planning Service**: Generate meal plans based on preferences
@@ -51,22 +53,38 @@ The system uses RabbitMQ/Kafka for event-driven communication between services:
 - **Framework**: React with TypeScript
 - **UI**: Tailwind CSS
 - **Build Tool**: Vite
-- **State Management**: React Query for server state
+- **State Management**: React Query for server state, Context API for auth state
 
 ### Backend
 - **API Framework**: FastAPI (Python)
 - **Database**: MongoDB (document-based NoSQL)
+- **Authentication**: JWT-based authentication
 - **OCR**: Tesseract OCR for ingredient detection
 - **Messaging**: RabbitMQ/Kafka for event-driven architecture
+- **API Gateway**: Nginx for routing and load balancing
 
 ### Infrastructure
 - **Containerization**: Docker
 - **Orchestration**: Docker Compose
-- **API Gateway**: Nginx for routing and load balancing
 
 ## Database Schema
 
 Each microservice maintains its own data store in MongoDB:
+
+### User Collection
+```json
+{
+  "_id": "ObjectId(567890)",
+  "username": "johndoe",
+  "email": "john@example.com",
+  "hashed_password": "hashed_password_string",
+  "preferences": {
+    "dietary_preferences": ["Vegetarian", "Low-Carb"],
+    "favorite_cuisines": ["Italian", "Mexican"]
+  },
+  "created_at": "2025-03-10T12:00:00Z"
+}
+```
 
 ### Recipe Service Collection
 ```json
@@ -132,6 +150,12 @@ Each microservice maintains its own data store in MongoDB:
 ```
 
 ## API Endpoints
+
+### Authentication Service
+- `POST /register` - Register a new user
+- `POST /login` - Login and get access token
+- `GET /profile` - Get user profile
+- `PUT /profile` - Update user profile
 
 ### Recipe Service
 - `GET /recipes` - List all recipes with optional filtering
@@ -238,6 +262,7 @@ The application includes both unit and integration tests:
 
 - **Authentication**: JWT-based authentication for API access
 - **Authorization**: Role-based access control for different operations
+- **Password Security**: Passwords are hashed using bcrypt
 - **Rate Limiting**: Prevents excessive API requests
 - **CORS**: Proper Cross-Origin Resource Sharing configuration
 - **Data Validation**: Input validation on all API endpoints
