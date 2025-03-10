@@ -1,44 +1,43 @@
-import { useState } from 'react'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import './App.css';
+
+// Components
+import Navbar from './components/Navbar';
+import Footer from './components/Footer';
+
+// Pages
+import HomePage from './pages/HomePage';
+import RecipesPage from './pages/RecipesPage';
+import RecipeDetailPage from './pages/RecipeDetailPage';
+import ScanPage from './pages/ScanPage';
+import MealPlanPage from './pages/MealPlanPage';
+import ShoppingListPage from './pages/ShoppingListPage';
+
+// Create a client
+const queryClient = new QueryClient();
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">Smart Recipe & Meal Planner</h1>
+    <QueryClientProvider client={queryClient}>
+      <Router>
+        <div className="flex flex-col min-h-screen">
+          <Navbar />
+          <main className="flex-grow">
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/recipes" element={<RecipesPage />} />
+              <Route path="/recipes/:id" element={<RecipeDetailPage />} />
+              <Route path="/scan" element={<ScanPage />} />
+              <Route path="/meal-plan" element={<MealPlanPage />} />
+              <Route path="/shopping-list" element={<ShoppingListPage />} />
+            </Routes>
+          </main>
+          <Footer />
         </div>
-      </header>
-      <main>
-        <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-          <div className="px-4 py-6 sm:px-0">
-            <div className="border-4 border-dashed border-gray-200 rounded-lg h-96 p-4 flex flex-col items-center justify-center">
-              <h2 className="text-2xl font-semibold mb-4">Welcome to Smart Recipe & Meal Planner</h2>
-              <p className="text-gray-600 mb-8 text-center max-w-md">
-                Plan your meals based on available ingredients, dietary preferences, and more!
-              </p>
-              <div className="flex space-x-4">
-                <button 
-                  className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-                  onClick={() => setCount((count) => count + 1)}
-                >
-                  Scan Ingredients
-                </button>
-                <button className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                  Browse Recipes
-                </button>
-              </div>
-              <p className="mt-4 text-sm text-gray-500">
-                Button click count: {count}
-              </p>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-  )
+      </Router>
+    </QueryClientProvider>
+  );
 }
 
-export default App
+export default App;
