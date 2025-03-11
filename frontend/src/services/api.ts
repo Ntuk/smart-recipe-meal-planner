@@ -223,9 +223,15 @@ export const mealPlanningApiService = {
 export const shoppingListApiService = {
   // Create a shopping list
   createShoppingList: async (shoppingList: {
-    meal_plan_id: string;
     name: string;
-    available_ingredients: string[];
+    items: Array<{
+      name: string;
+      quantity?: string | null;
+      unit?: string | null;
+      checked: boolean;
+    }>;
+    meal_plan_id?: string;
+    notes?: string;
     user_id?: string;
   }) => {
     const response = await shoppingListApi.post('/shopping-lists', shoppingList);

@@ -69,11 +69,32 @@ const ShoppingListPage = () => {
       
       setItems(formattedItems);
       
-      if (state.mealPlanId) {
-        handleCreateShoppingList(state.mealPlanId, formattedItems.map(item => item.name));
+      // Create a shopping list with the ingredients if the user is authenticated
+      if (isAuthenticated) {
+        const shoppingListData = {
+          name: `Ingredients from scan ${new Date().toLocaleDateString()}`,
+          items: state.ingredients.map(name => ({
+            name,
+            quantity: null,
+            unit: null,
+            checked: false
+          }))
+        };
+        
+        createShoppingList(shoppingListData)
+          .then(response => {
+            if (response) {
+              setShoppingListId(response.id);
+              setListName(response.name);
+            }
+          })
+          .catch(err => {
+            console.error('Error creating shopping list:', err);
+            setError('Failed to create shopping list automatically. Your items are still available locally.');
+          });
       }
     }
-  }, [state]);
+  }, [state, createShoppingList, isAuthenticated]);
   
   // Update items when shopping list data changes
   useEffect(() => {

@@ -1,6 +1,8 @@
 import React, { useState, useRef } from 'react';
 import { ingredientScannerApiService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
+import { useShoppingList } from '../hooks/useShoppingList';
+import { useNavigate } from 'react-router-dom';
 
 const ScanPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -12,6 +14,8 @@ const ScanPage: React.FC = () => {
   const [scanMode, setScanMode] = useState<'image' | 'text'>('image');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { isAuthenticated } = useAuth();
+  const { createShoppingList } = useShoppingList();
+  const navigate = useNavigate();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -82,6 +86,54 @@ const ScanPage: React.FC = () => {
 
   const triggerFileInput = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleCreateRecipe = () => {
+    if (!isAuthenticated) {
+      setError('You must be logged in to create a recipe');
+      return;
+    }
+    
+    if (ingredients.length === 0) {
+      setError('No ingredients detected');
+      return;
+    }
+    
+    // Navigate to recipes page with ingredients as state
+    navigate('/recipes/new', { 
+      state: { 
+        ingredients: ingredients.map(name => ({ name, quantity: null, unit: null }))
+      } 
+    });
+  };
+
+  const handleAddToShoppingList = async () => {
+    if (!isAuthenticated) {
+      setError('You must be logged in to add to shopping list. Please log in first.');
+      return;
+    }
+
+    if (!ingredients || ingredients.length === 0) {
+      setError('No ingredients detected. Please scan or enter ingredients first.');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Navigate to the shopping list page with the ingredients
+      navigate('/shopping-lists', { 
+        state: { 
+          ingredients: ingredients 
+        } 
+      });
+    } catch (error) {
+      console.error('Error adding to shopping list:', error);
+      setError('Failed to add to shopping list. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -177,10 +229,18 @@ const ScanPage: React.FC = () => {
           </ul>
           
           <div className="mt-6 flex space-x-4">
-            <button className="py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">
+            <button 
+              className="py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+              onClick={handleCreateRecipe}
+              disabled={loading}
+            >
               Create Recipe
             </button>
-            <button className="py-2 px-4 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200">
+            <button 
+              className="py-2 px-4 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
+              onClick={handleAddToShoppingList}
+              disabled={loading}
+            >
               Add to Shopping List
             </button>
           </div>
