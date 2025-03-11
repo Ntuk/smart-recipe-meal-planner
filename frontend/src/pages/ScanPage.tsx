@@ -3,6 +3,7 @@ import { ingredientScannerApiService } from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { useShoppingList } from '../hooks/useShoppingList';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 const ScanPage: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -16,6 +17,7 @@ const ScanPage: React.FC = () => {
   const { isAuthenticated } = useAuth();
   const { createShoppingList } = useShoppingList();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -33,12 +35,12 @@ const ScanPage: React.FC = () => {
 
   const handleScan = async () => {
     if (!isAuthenticated) {
-      setError('You must be logged in to scan ingredients');
+      setError(t('auth.loginRequired'));
       return;
     }
     
     if (!file) {
-      setError('Please select an image to scan');
+      setError(t('scan.selectImage'));
       return;
     }
     
@@ -53,7 +55,7 @@ const ScanPage: React.FC = () => {
       setIngredients(response.ingredients.map(item => item.name));
     } catch (err) {
       console.error('Error scanning ingredients:', err);
-      setError('Failed to scan ingredients. Please try again.');
+      setError(t('common.error'));
     } finally {
       setLoading(false);
     }
@@ -61,7 +63,7 @@ const ScanPage: React.FC = () => {
 
   const handleManualInput = async () => {
     if (!manualText.trim()) {
-      setError('Please enter some text');
+      setError(t('scan.enterIngredients'));
       return;
     }
     
@@ -83,7 +85,7 @@ const ScanPage: React.FC = () => {
       setLoading(false);
     } catch (err) {
       console.error('Error processing text:', err);
-      setError('Failed to process text. Please try again.');
+      setError(t('common.error'));
       setLoading(false);
     }
   };
@@ -94,12 +96,12 @@ const ScanPage: React.FC = () => {
 
   const handleCreateRecipe = () => {
     if (!isAuthenticated) {
-      setError('You must be logged in to create a recipe');
+      setError(t('auth.loginRequired'));
       return;
     }
     
     if (ingredients.length === 0) {
-      setError('No ingredients detected');
+      setError(t('scan.noIngredientsDetected'));
       return;
     }
     
@@ -113,7 +115,7 @@ const ScanPage: React.FC = () => {
 
   const handleAddToShoppingList = async () => {
     if (!ingredients || ingredients.length === 0) {
-      setError('No ingredients detected. Please scan or enter ingredients first.');
+      setError(t('scan.noIngredientsDetected'));
       return;
     }
 
@@ -129,7 +131,7 @@ const ScanPage: React.FC = () => {
       });
     } catch (error) {
       console.error('Error adding to shopping list:', error);
-      setError('Failed to add to shopping list. Please try again.');
+      setError(t('common.error'));
     } finally {
       setLoading(false);
     }
@@ -137,7 +139,7 @@ const ScanPage: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Ingredient Scanner</h1>
+      <h1 className="text-3xl font-bold mb-6">{t('scan.title')}</h1>
       
       <div className="mb-6">
         <div className="flex space-x-4 mb-4">
@@ -145,13 +147,13 @@ const ScanPage: React.FC = () => {
             className={`px-4 py-2 rounded-md ${scanMode === 'image' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}
             onClick={() => setScanMode('image')}
           >
-            Scan Image
+            {t('scan.scanImage')}
           </button>
           <button
             className={`px-4 py-2 rounded-md ${scanMode === 'text' ? 'bg-indigo-600 text-white' : 'bg-gray-200'}`}
             onClick={() => setScanMode('text')}
           >
-            Manual Input
+            {t('scan.manualInput')}
           </button>
         </div>
         
@@ -173,8 +175,8 @@ const ScanPage: React.FC = () => {
                 <img src={preview} alt="Preview" className="max-h-64 mx-auto" />
               ) : (
                 <div>
-                  <p className="text-gray-500">Click to select an image</p>
-                  <p className="text-sm text-gray-400 mt-2">Supported formats: JPG, PNG</p>
+                  <p className="text-gray-500">{t('scan.selectImage')}</p>
+                  <p className="text-sm text-gray-400 mt-2">{t('scan.supportedFormats')}</p>
                 </div>
               )}
             </div>
@@ -184,7 +186,7 @@ const ScanPage: React.FC = () => {
               disabled={!file || loading}
               className="w-full py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              {loading ? 'Scanning...' : 'Scan Ingredients'}
+              {loading ? t('common.loading') : t('scan.scanIngredients')}
             </button>
           </div>
         ) : (
@@ -192,7 +194,7 @@ const ScanPage: React.FC = () => {
             <textarea
               value={manualText}
               onChange={(e) => setManualText(e.target.value)}
-              placeholder="Enter your ingredients list here, one per line..."
+              placeholder={t('scan.enterIngredients')}
               className="w-full h-64 p-4 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
             />
             
@@ -201,7 +203,7 @@ const ScanPage: React.FC = () => {
               disabled={!manualText.trim() || loading}
               className="w-full py-2 px-4 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              {loading ? 'Processing...' : 'Process Text'}
+              {loading ? t('common.loading') : t('scan.processText')}
             </button>
           </div>
         )}
@@ -215,7 +217,7 @@ const ScanPage: React.FC = () => {
       
       {ingredients.length > 0 && (
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Detected Ingredients</h2>
+          <h2 className="text-xl font-semibold mb-4">{t('scan.detectedIngredients')}</h2>
           <ul className="space-y-2">
             {ingredients.map((ingredient, index) => (
               <li key={index} className="flex items-center">
@@ -233,14 +235,14 @@ const ScanPage: React.FC = () => {
               onClick={handleCreateRecipe}
               disabled={loading}
             >
-              Create Recipe
+              {t('recipes.createRecipe')}
             </button>
             <button 
               className="py-2 px-4 bg-indigo-100 text-indigo-700 rounded-md hover:bg-indigo-200"
               onClick={handleAddToShoppingList}
               disabled={loading}
             >
-              Add to Shopping List
+              {t('scan.addToShoppingList')}
             </button>
           </div>
         </div>

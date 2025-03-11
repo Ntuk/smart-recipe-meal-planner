@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -9,6 +10,7 @@ const LoginPage = () => {
   
   const { login, isLoading, error } = useAuthContext();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -16,12 +18,12 @@ const LoginPage = () => {
     
     // Basic validation
     if (!email.trim()) {
-      setFormError('Email is required');
+      setFormError(t('auth.email') + ' ' + t('common.error'));
       return;
     }
     
     if (!password.trim()) {
-      setFormError('Password is required');
+      setFormError(t('auth.password') + ' ' + t('common.error'));
       return;
     }
     
@@ -39,12 +41,12 @@ const LoginPage = () => {
     <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Sign in to your account
+          {t('auth.loginTitle')}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Or{' '}
+          {t('auth.dontHaveAccount')}{' '}
           <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
-            create a new account
+            {t('common.register')}
           </Link>
         </p>
       </div>
@@ -79,7 +81,7 @@ const LoginPage = () => {
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
+                {t('auth.email')}
               </label>
               <div className="mt-1">
                 <input
@@ -97,7 +99,7 @@ const LoginPage = () => {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+                {t('auth.password')}
               </label>
               <div className="mt-1">
                 <input
@@ -122,13 +124,13 @@ const LoginPage = () => {
                   className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                  Remember me
+                  {t('auth.rememberMe')}
                 </label>
               </div>
 
               <div className="text-sm">
                 <a href="#" className="font-medium text-blue-600 hover:text-blue-500">
-                  Forgot your password?
+                  {t('auth.forgotPassword')}
                 </a>
               </div>
             </div>
@@ -139,7 +141,7 @@ const LoginPage = () => {
                 disabled={isLoading}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {isLoading ? 'Signing in...' : 'Sign in'}
+                {isLoading ? t('common.loading') : t('common.login')}
               </button>
             </div>
           </form>

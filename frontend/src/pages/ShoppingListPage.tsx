@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAuthContext } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import SavedLists from '../components/SavedLists';
+import { useTranslation } from 'react-i18next';
 
 interface LocationState {
   ingredients?: string[];
@@ -52,12 +53,13 @@ const ShoppingListPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
   const { isAuthenticated } = useAuthContext();
+  const { t } = useTranslation();
   
   const { createShoppingList, checkItem, deleteShoppingList } = useShoppingList();
   
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [newItem, setNewItem] = useState('');
-  const [listName, setListName] = useState('My Shopping List');
+  const [listName, setListName] = useState(t('shoppingList.title'));
   const [showChecked, setShowChecked] = useState(true);
   const [shoppingListId, setShoppingListId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -238,7 +240,7 @@ const ShoppingListPage = () => {
         const response = await createShoppingList(shoppingListData);
         if (response) {
           setShoppingListId(response.id);
-          toast.success('Shopping list saved successfully!');
+          toast.success(t('shoppingList.savedSuccessfully'));
         }
       } else {
         // If user is not authenticated, save to localStorage
@@ -252,12 +254,12 @@ const ShoppingListPage = () => {
         
         savedLists.push(newList);
         localStorage.setItem('shoppingLists', JSON.stringify(savedLists));
-        toast.success('Shopping list saved locally!');
+        toast.success(t('shoppingList.savedLocally'));
       }
     } catch (err) {
       console.error('Error saving shopping list:', err);
-      setError('Failed to save shopping list');
-      toast.error('Failed to save shopping list');
+      setError(t('shoppingList.failedToSave'));
+      toast.error(t('shoppingList.failedToSave'));
     } finally {
       setIsLoading(false);
     }
@@ -271,14 +273,14 @@ const ShoppingListPage = () => {
             <div className="px-4 py-5 sm:px-6">
               <div className="flex justify-between items-center">
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">Shopping List</h1>
+                  <h1 className="text-2xl font-bold text-gray-900">{t('shoppingList.title')}</h1>
                   <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                    Manage your shopping list for ingredients you need
+                    {t('shoppingList.manage')}
                   </p>
                 </div>
                 <div className="flex items-center">
                   <label htmlFor="show-checked" className="mr-2 text-sm text-gray-700">
-                    Show checked items
+                    {t('shoppingList.showCheckedItems')}
                   </label>
                   <input
                     type="checkbox"
@@ -296,7 +298,7 @@ const ShoppingListPage = () => {
               
               <div className="mb-6">
                 <label htmlFor="list-name" className="block text-sm font-medium text-gray-700">
-                  List Name
+                  {t('shoppingList.listName')}
                 </label>
                 <input
                   type="text"
@@ -309,7 +311,7 @@ const ShoppingListPage = () => {
               
               <form onSubmit={handleAddItem} className="mb-6">
                 <label htmlFor="new-item" className="block text-sm font-medium text-gray-700">
-                  Add Item
+                  {t('shoppingList.addItem')}
                 </label>
                 <div className="mt-1 flex rounded-md shadow-sm">
                   <input
@@ -322,9 +324,9 @@ const ShoppingListPage = () => {
                   />
                   <button
                     type="submit"
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
-                    Add
+                    {t('common.add')}
                   </button>
                 </div>
               </form>
@@ -398,7 +400,7 @@ const ShoppingListPage = () => {
                       onClick={clearCheckedItems}
                       className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                     >
-                      Clear Checked Items
+                      {t('shoppingList.clearCheckedItems')}
                     </button>
                     <div className="space-x-2">
                       <button
@@ -407,14 +409,14 @@ const ShoppingListPage = () => {
                         disabled={isLoading}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                       >
-                        {isLoading ? 'Saving...' : 'Save List'}
+                        {isLoading ? t('common.loading') : t('shoppingList.saveList')}
                       </button>
                       <button
                         type="button"
                         onClick={() => window.print()}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
-                        Print List
+                        {t('shoppingList.printList')}
                       </button>
                     </div>
                   </div>

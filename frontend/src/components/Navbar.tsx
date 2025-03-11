@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const location = useLocation();
   const { user, isAuthenticated, logout } = useAuthContext();
+  const { t } = useTranslation();
 
   const isActive = (path: string) => {
     return location.pathname === path;
@@ -19,7 +22,7 @@ const Navbar = () => {
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
               <Link to="/" className="text-xl font-bold text-blue-600">
-                Smart Recipe
+                {t('common.appName')}
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
@@ -31,7 +34,7 @@ const Navbar = () => {
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
               >
-                Home
+                {t('navigation.home')}
               </Link>
               <Link
                 to="/recipes"
@@ -41,7 +44,7 @@ const Navbar = () => {
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
               >
-                Recipes
+                {t('navigation.recipes')}
               </Link>
               <Link
                 to="/scan"
@@ -51,7 +54,7 @@ const Navbar = () => {
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
               >
-                Scan Ingredients
+                {t('navigation.scanIngredients')}
               </Link>
               <Link
                 to="/meal-plan"
@@ -61,7 +64,7 @@ const Navbar = () => {
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
               >
-                Meal Plans
+                {t('navigation.mealPlans')}
               </Link>
               <Link
                 to="/shopping-list"
@@ -71,13 +74,15 @@ const Navbar = () => {
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
               >
-                Shopping Lists
+                {t('navigation.shoppingLists')}
               </Link>
             </div>
           </div>
           
           {/* User profile section */}
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
+            <LanguageSwitcher />
+            
             {isAuthenticated ? (
               <div className="ml-3 relative">
                 <div>
@@ -115,7 +120,7 @@ const Navbar = () => {
                       id="user-menu-item-0"
                       onClick={() => setIsProfileMenuOpen(false)}
                     >
-                      Your Profile
+                      {t('common.profile')}
                     </Link>
                     <button
                       className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
@@ -127,24 +132,24 @@ const Navbar = () => {
                         setIsProfileMenuOpen(false);
                       }}
                     >
-                      Sign out
+                      {t('common.logout')}
                     </button>
                   </div>
                 )}
               </div>
             ) : (
-              <div className="flex space-x-4">
+              <div className="flex space-x-4 ml-4">
                 <Link
                   to="/login"
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
-                  Log in
+                  {t('common.login')}
                 </Link>
                 <Link
                   to="/register"
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
-                  Sign up
+                  {t('common.register')}
                 </Link>
               </div>
             )}
@@ -207,7 +212,7 @@ const Navbar = () => {
             } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            Home
+            {t('navigation.home')}
           </Link>
           <Link
             to="/recipes"
@@ -218,7 +223,7 @@ const Navbar = () => {
             } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            Recipes
+            {t('navigation.recipes')}
           </Link>
           <Link
             to="/scan"
@@ -229,7 +234,7 @@ const Navbar = () => {
             } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            Scan Ingredients
+            {t('navigation.scanIngredients')}
           </Link>
           <Link
             to="/meal-plan"
@@ -240,7 +245,7 @@ const Navbar = () => {
             } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            Meal Plans
+            {t('navigation.mealPlans')}
           </Link>
           <Link
             to="/shopping-list"
@@ -251,7 +256,7 @@ const Navbar = () => {
             } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            Shopping Lists
+            {t('navigation.shoppingLists')}
           </Link>
         </div>
       </div>
