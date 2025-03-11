@@ -30,13 +30,13 @@ interface ShoppingItem {
 // Helper function to categorize ingredients
 const categorizeIngredient = (ingredient: string): string => {
   const categories = {
-    'Produce': ['tomato', 'onion', 'garlic', 'lettuce', 'carrot', 'potato', 'cucumber', 'pepper', 'broccoli', 'spinach', 'cabbage', 'cauliflower', 'peas'],
-    'Meat & Seafood': ['chicken', 'beef', 'pork', 'fish', 'shrimp', 'salmon', 'tuna', 'bacon', 'sausage', 'pancetta'],
-    'Dairy & Eggs': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'egg', 'parmesan'],
-    'Grains & Pasta': ['rice', 'pasta', 'noodle', 'bread', 'flour', 'cereal', 'oat', 'spaghetti'],
-    'Spices & Seasonings': ['salt', 'pepper', 'oregano', 'basil', 'thyme', 'cumin', 'paprika', 'cinnamon', 'curry', 'ginger'],
-    'Oils & Sauces': ['oil', 'vinegar', 'sauce', 'mayonnaise', 'ketchup', 'mustard', 'soy sauce', 'olive oil'],
-    'Canned & Jarred': ['bean', 'soup', 'tuna', 'tomato sauce', 'coconut milk'],
+    'dairyeggs': ['milk', 'cheese', 'yogurt', 'butter', 'cream', 'egg', 'parmesan'],
+    'meatseafood': ['chicken', 'beef', 'pork', 'fish', 'shrimp', 'salmon', 'tuna', 'bacon', 'sausage', 'pancetta'],
+    'produce': ['tomato', 'onion', 'garlic', 'lettuce', 'carrot', 'potato', 'cucumber', 'pepper', 'broccoli', 'spinach', 'cabbage', 'cauliflower', 'peas'],
+    'grainspasta': ['rice', 'pasta', 'noodle', 'bread', 'flour', 'cereal', 'oat', 'spaghetti'],
+    'spicesseasonings': ['salt', 'pepper', 'oregano', 'basil', 'thyme', 'cumin', 'paprika', 'cinnamon', 'curry', 'ginger'],
+    'oilssauces': ['oil', 'vinegar', 'sauce', 'mayonnaise', 'ketchup', 'mustard', 'soy sauce', 'olive oil'],
+    'cannedjarred': ['bean', 'soup', 'tuna', 'tomato sauce', 'coconut milk'],
   };
 
   const lowerIngredient = ingredient.toLowerCase();
@@ -47,7 +47,7 @@ const categorizeIngredient = (ingredient: string): string => {
     }
   }
   
-  return 'Other';
+  return 'other';
 };
 
 const ShoppingListPage = () => {
@@ -210,7 +210,7 @@ const ShoppingListPage = () => {
   const itemsByCategory = items.reduce((acc, item) => {
     if (!showChecked && item.checked) return acc;
     
-    const category = item.category || 'Other';
+    const category = item.category || 'other';
     if (!acc[category]) {
       acc[category] = [];
     }
@@ -358,7 +358,9 @@ const ShoppingListPage = () => {
                 <div>
                   {sortedCategories.map(category => (
                     <div key={category} className="mb-6">
-                      <h3 className="text-lg font-medium text-gray-900 mb-3">{t(`categories.${category.toLowerCase().replace(' & ', '')}`)}</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-3">
+                        {t(`categories.${category.toLowerCase()}`)}
+                      </h3>
                       <ul className="divide-y divide-gray-200 border-t border-b border-gray-200">
                         {itemsByCategory[category].map(item => (
                           <li key={item.id} className="py-4 flex items-center justify-between">

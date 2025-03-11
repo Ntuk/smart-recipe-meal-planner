@@ -144,12 +144,12 @@
   },
   "categories": {
     "produce": "Färskvaror",
-    "meatSeafood": "Kött & Skaldjur",
-    "dairyEggs": "Mejeri & Ägg",
-    "grainsPasta": "Gryn & Pasta",
-    "spicesSeasonings": "Kryddor & Smaksättare",
-    "oilsSauces": "Oljor & Såser",
-    "cannedJarred": "Konserver & Burkar",
+    "meatseafood": "Kött & Skaldjur",
+    "dairyeggs": "Mejeri & Ägg",
+    "grainspasta": "Gryn & Pasta",
+    "spicesseasonings": "Kryddor & Smaksättare",
+    "oilssauces": "Oljor & Såser",
+    "cannedjarred": "Konserver & Burkar",
     "other": "Övrigt"
   }
 } 

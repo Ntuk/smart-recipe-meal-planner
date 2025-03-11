@@ -144,12 +144,12 @@
   },
   "categories": {
     "produce": "Produce",
-    "meatSeafood": "Meat & Seafood",
-    "dairyEggs": "Dairy & Eggs",
-    "grainsPasta": "Grains & Pasta",
-    "spicesSeasonings": "Spices & Seasonings",
-    "oilsSauces": "Oils & Sauces",
-    "cannedJarred": "Canned & Jarred",
+    "meatseafood": "Meat & Seafood",
+    "dairyeggs": "Dairy & Eggs",
+    "grainspasta": "Grains & Pasta",
+    "spicesseasonings": "Spices & Seasonings",
+    "oilssauces": "Oils & Sauces",
+    "cannedjarred": "Canned & Jarred",
     "other": "Other"
   }
 } 
