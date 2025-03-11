@@ -1,0 +1,157 @@
+{
+  "project": "Smart Recipe & Meal Planner",
+  "description": "A microservices-based distributed application that suggests meal plans based on available ingredients, dietary preferences, and user history. Developed as part of the Microservices and Containers course (KM00DT91-3005).",
+  "architecture": {
+    "microservices": [
+      {
+        "name": "Authentication Service",
+        "responsibilities": ["User registration, login, profile management, JWT token handling"]
+      },
+      {
+        "name": "Ingredient Scanner Service",
+        "responsibilities": ["Extracts ingredients from images using OCR, manages user's available ingredients"]
+      },
+      {
+        "name": "Recipe Service",
+        "responsibilities": ["Stores and retrieves recipes, provides search and filtering capabilities"]
+      },
+      {
+        "name": "Meal Planning Service",
+        "responsibilities": ["Generates meal plans based on available ingredients and user preferences"]
+      },
+      {
+        "name": "Shopping List Service",
+        "responsibilities": ["Creates and manages shopping lists for missing ingredients"]
+      }
+    ],
+    "communication": {
+      "synchronous": [
+        "Frontend → Auth Service: User registration, login, profile management",
+        "Frontend → Recipe Service: Fetch recipes, filter by ingredients/tags",
+        "Frontend → Ingredient Scanner Service: Upload images for OCR processing",
+        "Frontend → Meal Planning Service: Generate meal plans based on preferences",
+        "Frontend → Shopping List Service: Create and manage shopping lists"
+      ],
+      "asynchronous": [
+        "Ingredient Scanner Service → Recipe Service: Notify Recipe Service of new ingredients",
+        "Meal Planning Service → Shopping List Service: Notify Shopping List Service of new meal plans",
+        "Services → Frontend: Real-time updates on data changes",
+        "Auth Service → Other Services: Broadcast user authentication events"
+      ]
+    }
+  },
+  "tech_stack": {
+    "frontend": {
+      "framework": "React with TypeScript",
+      "ui": "Tailwind CSS",
+      "build_tool": "Vite",
+      "state_management": "React Query, Context API",
+      "routing": "React Router"
+    },
+    "backend": {
+      "api_framework": "FastAPI (Python)",
+      "database": "MongoDB",
+      "authentication": "JWT-based authentication with refresh tokens",
+      "ocr": "Tesseract OCR",
+      "messaging": "RabbitMQ/Kafka",
+      "api_gateway": "Nginx"
+    },
+    "infrastructure": {
+      "containerization": "Docker",
+      "orchestration": "Docker Compose"
+    }
+  },
+  "project_structure": {
+    "root": "smart-recipe-meal-planner/",
+    "frontend": {
+      "path": "frontend/",
+      "subdirectories": ["src/", "docs/", "public/"],
+      "src_structure": {
+        "components": "Reusable UI components",
+        "pages": "Page components",
+        "services": "API service clients",
+        "hooks": "Custom React hooks",
+        "context": "React context providers",
+        "types": "TypeScript type definitions"
+      }
+    },
+    "backend": {
+      "path": "backend/",
+      "services": [
+        "auth-service/",
+        "recipe-service/",
+        "ingredient-scanner-service/",
+        "meal-planning-service/",
+        "shopping-list-service/"
+      ],
+      "common_structure": {
+        "app/": "Application code",
+        "Dockerfile": "Container configuration",
+        "requirements.txt": "Python dependencies"
+      }
+    },
+    "config": "docker-compose.yml"
+  },
+  "api_endpoints": {
+    "auth": {
+      "register": "POST /auth/register",
+      "login": "POST /auth/login",
+      "refresh": "POST /auth/refresh",
+      "logout": "POST /auth/logout",
+      "profile": "GET /auth/profile, PUT /auth/profile"
+    },
+    "recipe": {
+      "list": "GET /recipes",
+      "get": "GET /recipes/{id}",
+      "create": "POST /recipes",
+      "update": "PUT /recipes/{id}",
+      "delete": "DELETE /recipes/{id}"
+    },
+    "ingredient_scanner": {
+      "scan": "POST /scan",
+      "manual_input": "POST /manual-input"
+    },
+    "meal_planning": {
+      "create": "POST /meal-plans",
+      "list": "GET /meal-plans",
+      "get": "GET /meal-plans/{id}",
+      "delete": "DELETE /meal-plans/{id}"
+    },
+    "shopping_list": {
+      "create": "POST /shopping-lists",
+      "list": "GET /shopping-lists",
+      "get": "GET /shopping-lists/{id}",
+      "check_item": "PUT /shopping-lists/{id}/items/{ingredient}/check",
+      "delete": "DELETE /shopping-lists/{id}"
+    }
+  },
+  "security": {
+    "authentication": "JWT-based authentication with refresh tokens",
+    "password_security": "Bcrypt hashing with salt",
+    "rate_limiting": "Prevents excessive API requests",
+    "cors": "Proper Cross-Origin Resource Sharing configuration",
+    "data_validation": "Input validation on all API endpoints",
+    "https": "Encryption for all communications in production"
+  },
+  "testing_strategy": {
+    "unit_tests": "Each microservice includes unit tests for business logic",
+    "integration_tests": "API endpoints and service interactions are tested",
+    "end_to_end_tests": "Complete user workflows are tested",
+    "auth_tests": "JWT authentication flow is specifically tested"
+  },
+  "deployment": {
+    "environments": [
+      "Local development",
+      "Cloud providers (AWS, GCP, Azure)",
+      "Kubernetes cluster for production"
+    ]
+  },
+  "future_enhancements": [
+    "Enhanced user profiles and dietary restrictions",
+    "ML-based recipe recommendations",
+    "Mobile application",
+    "GraphQL API",
+    "Prometheus and Grafana monitoring",
+    "Multi-factor authentication"
+  ]
+}
