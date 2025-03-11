@@ -30,9 +30,9 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Router>
-          <div className="flex flex-col min-h-screen">
+          <div className="app-container">
             <Navbar />
-            <main className="flex-grow">
+            <div className="content-wrapper">
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/recipes" element={<RecipesPage />} />
@@ -47,7 +47,7 @@ function App() {
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
-            </main>
+            </div>
             <Footer />
             <Toaster position="bottom-right" />
           </div>

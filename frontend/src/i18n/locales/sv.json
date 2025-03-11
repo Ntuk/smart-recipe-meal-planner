@@ -21,7 +21,8 @@
     "profile": "Profil",
     "show": "Visa",
     "hide": "Dölj",
-    "guest": "Gäst"
+    "guest": "Gäst",
+    "allRightsReserved": "Alla rättigheter förbehållna"
   },
   "navigation": {
     "home": "Hem",
@@ -88,7 +89,11 @@
     "tagsPlaceholder": "Kommaseparerade taggar (t.ex. Italienskt, Pasta, Snabbt)",
     "titleRequired": "Titel krävs",
     "ingredientsRequired": "Minst en ingrediens krävs",
-    "instructionsRequired": "Instruktioner krävs"
+    "instructionsRequired": "Instruktioner krävs",
+    "searchPlaceholder": "t.ex. pasta, kyckling, tomater",
+    "allCuisines": "Alla Kök",
+    "allDifficulties": "Alla Svårighetsgrader",
+    "moreIngredients": "+{{count}} fler"
   },
   "scan": {
     "title": "Ingrediensscanner",
@@ -122,12 +127,20 @@
   },
   "mealPlan": {
     "title": "Måltidsplan",
+    "description": "Skapa en personlig måltidsplan baserad på dina ingredienser och preferenser",
     "createPlan": "Skapa Måltidsplan",
     "selectRecipes": "Välj Recept",
     "planName": "Plannamn",
     "days": "Dagar",
     "generateShoppingList": "Generera Inköpslista",
-    "noMealPlansFound": "Inga måltidsplaner hittades"
+    "noMealPlansFound": "Inga måltidsplaner hittades",
+    "defaultName": "Min Måltidsplan",
+    "enterIngredient": "Ange en ingrediens",
+    "noIngredientsAdded": "Inga ingredienser tillagda ännu",
+    "generatePlan": "Generera Plan",
+    "day": "Dag",
+    "missing": "saknas",
+    "missingIngredientsDescription": "Dessa ingredienser behövs för din måltidsplan men finns inte bland dina tillgängliga ingredienser."
   },
   "categories": {
     "produce": "Färskvaror",

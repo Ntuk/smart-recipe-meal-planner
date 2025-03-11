@@ -111,7 +111,7 @@ const RecipesPage = () => {
                       name="search"
                       id="search"
                       className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      placeholder="e.g., pasta, chicken, tomatoes"
+                      placeholder={t('recipes.searchPlaceholder', 'e.g., pasta, chicken, tomatoes')}
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -129,7 +129,7 @@ const RecipesPage = () => {
                     value={selectedCuisine}
                     onChange={(e) => setSelectedCuisine(e.target.value)}
                   >
-                    <option value="">{t('All Cuisines', 'All Cuisines')}</option>
+                    <option value="">{t('recipes.allCuisines', 'All Cuisines')}</option>
                     {cuisines.map((cuisine) => (
                       <option key={cuisine} value={cuisine}>
                         {cuisine}
@@ -149,7 +149,7 @@ const RecipesPage = () => {
                     value={selectedDifficulty}
                     onChange={(e) => setSelectedDifficulty(e.target.value)}
                   >
-                    <option value="">{t('All Difficulties', 'All Difficulties')}</option>
+                    <option value="">{t('recipes.allDifficulties', 'All Difficulties')}</option>
                     {difficulties.map((difficulty) => (
                       <option key={difficulty} value={difficulty}>
                         {difficulty}
@@ -208,7 +208,7 @@ const RecipesPage = () => {
                               <li key={index}>{ingredient}</li>
                             ))}
                             {recipe.ingredients.length > 4 && (
-                              <li>+{recipe.ingredients.length - 4} more</li>
+                              <li>{t('recipes.moreIngredients', '+{{count}} more', { count: recipe.ingredients.length - 4 })}</li>
                             )}
                           </ul>
                         </div>

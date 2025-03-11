@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { MealPlan, Recipe } from '../types';
+import { useTranslation } from 'react-i18next';
+import { useIngredientTranslation } from '../hooks/useIngredientTranslation';
 
 // Remove mock recipe data
 
@@ -13,24 +15,26 @@ const MealPlanPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
   const { createMealPlan } = useMealPlanning();
+  const { t } = useTranslation();
+  const { translateIngredientName } = useIngredientTranslation();
   
   const [availableIngredients, setAvailableIngredients] = useState<string[]>(state?.ingredients || []);
   const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
   const [days, setDays] = useState(7);
   const [mealPlan, setMealPlan] = useState<MealPlan | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [planName, setPlanName] = useState('My Meal Plan');
+  const [planName, setPlanName] = useState(t('mealPlan.defaultName', 'My Meal Plan'));
   const [missingIngredients, setMissingIngredients] = useState<string[]>([]);
 
   // Dietary preferences options
   const dietaryOptions = [
-    'Vegetarian',
-    'Vegan',
-    'Gluten-Free',
-    'Dairy-Free',
-    'Keto',
-    'Low-Carb',
-    'Paleo',
+    { id: 'vegetarian', label: t('mealPlan.dietaryOptions.vegetarian', 'Vegetarian') },
+    { id: 'vegan', label: t('mealPlan.dietaryOptions.vegan', 'Vegan') },
+    { id: 'glutenFree', label: t('mealPlan.dietaryOptions.glutenFree', 'Gluten-Free') },
+    { id: 'dairyFree', label: t('mealPlan.dietaryOptions.dairyFree', 'Dairy-Free') },
+    { id: 'keto', label: t('mealPlan.dietaryOptions.keto', 'Keto') },
+    { id: 'lowCarb', label: t('mealPlan.dietaryOptions.lowCarb', 'Low-Carb') },
+    { id: 'paleo', label: t('mealPlan.dietaryOptions.paleo', 'Paleo') },
   ];
 
   // Handle dietary preference toggle
@@ -103,20 +107,20 @@ const MealPlanPage = () => {
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="px-4 py-5 sm:px-6">
-              <h1 className="text-2xl font-bold text-gray-900">Generate Meal Plan</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t('mealPlan.title')}</h1>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Create a personalized meal plan based on your ingredients and preferences
+                {t('mealPlan.description', 'Create a personalized meal plan based on your ingredients and preferences')}
               </p>
             </div>
             
             <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Plan Settings</h3>
+                  <h3 className="text-lg font-medium text-gray-900">{t('mealPlan.planSettings', 'Plan Settings')}</h3>
                   
                   <div className="mt-4">
                     <label htmlFor="plan-name" className="block text-sm font-medium text-gray-700">
-                      Plan Name
+                      {t('mealPlan.planName')}
                     </label>
                     <input
                       type="text"
@@ -129,7 +133,7 @@ const MealPlanPage = () => {
                   
                   <div className="mt-4">
                     <label htmlFor="days" className="block text-sm font-medium text-gray-700">
-                      Number of Days
+                      {t('mealPlan.days')}
                     </label>
                     <select
                       id="days"
@@ -139,29 +143,29 @@ const MealPlanPage = () => {
                     >
                       {[1, 2, 3, 4, 5, 6, 7, 14].map((d) => (
                         <option key={d} value={d}>
-                          {d} {d === 1 ? 'day' : 'days'}
+                          {d} {d === 1 ? t('mealPlan.day', 'day') : t('mealPlan.days')}
                         </option>
                       ))}
                     </select>
                   </div>
                   
                   <div className="mt-4">
-                    <span className="block text-sm font-medium text-gray-700 mb-2">
-                      Dietary Preferences
+                    <span className="block text-sm font-medium text-gray-700">
+                      {t('mealPlan.dietaryPreferences', 'Dietary Preferences')}
                     </span>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       {dietaryOptions.map((option) => (
                         <button
-                          key={option}
+                          key={option.id}
                           type="button"
                           className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            dietaryPreferences.includes(option)
+                            dietaryPreferences.includes(option.id)
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                           }`}
-                          onClick={() => handleDietaryToggle(option)}
+                          onClick={() => handleDietaryToggle(option.id)}
                         >
-                          {option}
+                          {option.label}
                         </button>
                       ))}
                     </div>
@@ -169,66 +173,64 @@ const MealPlanPage = () => {
                 </div>
                 
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Available Ingredients</h3>
+                  <h3 className="text-lg font-medium text-gray-900">{t('mealPlan.availableIngredients', 'Available Ingredients')}</h3>
                   
                   <form onSubmit={handleAddIngredient} className="mt-4">
-                    <div className="flex">
+                    <div className="flex rounded-md shadow-sm">
                       <input
                         type="text"
                         id="new-ingredient"
-                        className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                        placeholder="Add an ingredient"
+                        className="focus:ring-blue-500 focus:border-blue-500 flex-1 block w-full rounded-none rounded-l-md sm:text-sm border-gray-300"
+                        placeholder={t('mealPlan.enterIngredient', 'Enter an ingredient')}
                       />
                       <button
                         type="submit"
-                        className="ml-3 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
-                        Add
+                        {t('common.add')}
                       </button>
                     </div>
                   </form>
                   
-                  <div className="mt-4">
-                    {availableIngredients.length > 0 ? (
-                      <div className="bg-gray-50 p-4 rounded-md">
-                        <ul className="space-y-2">
-                          {availableIngredients.map((ingredient, index) => (
-                            <li key={index} className="flex justify-between items-center">
-                              <span className="text-sm text-gray-700">{ingredient}</span>
+                  {availableIngredients.length > 0 ? (
+                    <div className="mt-4">
+                      <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md">
+                        {availableIngredients.map((ingredient, index) => (
+                          <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
+                            <div className="w-0 flex-1 flex items-center">
+                              <span className="ml-2 flex-1 w-0 truncate">
+                                {translateIngredientName(ingredient)}
+                              </span>
+                            </div>
+                            <div className="ml-4 flex-shrink-0">
                               <button
                                 type="button"
-                                className="text-red-600 hover:text-red-900"
+                                className="font-medium text-red-600 hover:text-red-500"
                                 onClick={() => handleRemoveIngredient(ingredient)}
                               >
-                                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
-                                  <path
-                                    fillRule="evenodd"
-                                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                                    clipRule="evenodd"
-                                  />
-                                </svg>
+                                {t('common.delete')}
                               </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500 italic">
-                        No ingredients added yet. Add some ingredients to generate a meal plan.
-                      </p>
-                    )}
-                  </div>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm text-gray-500 italic">
+                      {t('mealPlan.noIngredientsAdded', 'No ingredients added yet')}
+                    </p>
+                  )}
                 </div>
               </div>
               
-              <div className="mt-8 flex justify-center">
+              <div className="mt-8 flex justify-end">
                 <button
                   type="button"
-                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   onClick={handleGeneratePlan}
-                  disabled={isLoading || availableIngredients.length === 0}
+                  disabled={isLoading}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
-                  {isLoading ? 'Generating...' : 'Generate Meal Plan'}
+                  {isLoading ? t('common.loading') : t('mealPlan.generatePlan', 'Generate Plan')}
                 </button>
               </div>
             </div>
@@ -244,23 +246,23 @@ const MealPlanPage = () => {
                         <div className="flex justify-between items-start">
                           <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            Day {index + 1}
+                            {t('mealPlan.day', 'Day')} {index + 1}
                           </span>
                         </div>
                         <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
                         <div className="mt-4">
-                          <h4 className="text-sm font-medium text-gray-900">Ingredients:</h4>
+                          <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
                           <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
                             {recipe.ingredients.map((ingredient, idx) => (
                               <li key={idx} className={availableIngredients.some(i => 
                                 i.toLowerCase().includes(ingredient.toLowerCase()) || 
                                 ingredient.toLowerCase().includes(i.toLowerCase())
                               ) ? '' : 'text-red-500'}>
-                                {ingredient}
+                                {translateIngredientName(ingredient)}
                                 {!availableIngredients.some(i => 
                                   i.toLowerCase().includes(ingredient.toLowerCase()) || 
                                   ingredient.toLowerCase().includes(i.toLowerCase())
-                                ) && ' (missing)'}
+                                ) && ` (${t('mealPlan.missing', 'missing')})`}
                               </li>
                             ))}
                           </ul>
@@ -270,7 +272,7 @@ const MealPlanPage = () => {
                             to={`/recipes/${recipe.id}`}
                             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
-                            View Recipe
+                            {t('recipes.viewRecipe')}
                           </Link>
                         </div>
                       </div>
@@ -280,15 +282,15 @@ const MealPlanPage = () => {
                 
                 {missingIngredients.length > 0 && (
                   <div className="mt-8">
-                    <h3 className="text-lg font-medium text-gray-900">Shopping List</h3>
+                    <h3 className="text-lg font-medium text-gray-900">{t('shoppingList.title')}</h3>
                     <p className="mt-1 text-sm text-gray-500">
-                      These ingredients are needed for your meal plan but aren't in your available ingredients.
+                      {t('mealPlan.missingIngredientsDescription', 'These ingredients are needed for your meal plan but aren\'t in your available ingredients.')}
                     </p>
                     <div className="mt-4 bg-red-50 p-4 rounded-md">
                       <ul className="list-disc pl-5 space-y-1">
                         {missingIngredients.map((ingredient, index) => (
                           <li key={index} className="text-sm text-red-700">
-                            {ingredient.charAt(0).toUpperCase() + ingredient.slice(1)}
+                            {translateIngredientName(ingredient.charAt(0).toUpperCase() + ingredient.slice(1))}
                           </li>
                         ))}
                       </ul>
@@ -299,7 +301,7 @@ const MealPlanPage = () => {
                         state={{ ingredients: missingIngredients }}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                       >
-                        Generate Shopping List
+                        {t('mealPlan.generateShoppingList')}
                       </Link>
                     </div>
                   </div>

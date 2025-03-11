@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import LanguageSwitcher from './LanguageSwitcher';
+
+// Define fixed widths for each menu item to prevent shifting
+const menuItemWidths = {
+  home: 'w-20', // Home/Hem/Etusivu
+  recipes: 'w-24', // Recipes/Recept/Reseptit
+  scan: 'w-40', // Scan Ingredients/Skanna Ingredienser/Skannaa Ainekset
+  mealPlans: 'w-32', // Meal Plans/Måltidsplaner/Ateriasuunnitelmat
+  shoppingLists: 'w-36', // Shopping Lists/Inköpslistor/Ostoslistat
+};
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -32,7 +40,7 @@ const Navbar = () => {
                   isActive('/') 
                     ? 'border-blue-500 text-gray-900' 
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                } inline-flex items-center justify-center ${menuItemWidths.home} px-1 pt-1 border-b-2 text-sm font-medium`}
               >
                 {t('navigation.home')}
               </Link>
@@ -42,7 +50,7 @@ const Navbar = () => {
                   isActive('/recipes') 
                     ? 'border-blue-500 text-gray-900' 
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                } inline-flex items-center justify-center ${menuItemWidths.recipes} px-1 pt-1 border-b-2 text-sm font-medium`}
               >
                 {t('navigation.recipes')}
               </Link>
@@ -52,7 +60,7 @@ const Navbar = () => {
                   isActive('/scan') 
                     ? 'border-blue-500 text-gray-900' 
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                } inline-flex items-center justify-center ${menuItemWidths.scan} px-1 pt-1 border-b-2 text-sm font-medium`}
               >
                 {t('navigation.scanIngredients')}
               </Link>
@@ -62,7 +70,7 @@ const Navbar = () => {
                   isActive('/meal-plan') 
                     ? 'border-blue-500 text-gray-900' 
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                } inline-flex items-center justify-center ${menuItemWidths.mealPlans} px-1 pt-1 border-b-2 text-sm font-medium`}
               >
                 {t('navigation.mealPlans')}
               </Link>
@@ -72,7 +80,7 @@ const Navbar = () => {
                   isActive('/shopping-list') 
                     ? 'border-blue-500 text-gray-900' 
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-                } inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium`}
+                } inline-flex items-center justify-center ${menuItemWidths.shoppingLists} px-1 pt-1 border-b-2 text-sm font-medium`}
               >
                 {t('navigation.shoppingLists')}
               </Link>
@@ -81,8 +89,6 @@ const Navbar = () => {
           
           {/* User profile section */}
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
-            <LanguageSwitcher />
-            
             {isAuthenticated ? (
               <div className="ml-3 relative">
                 <div>
@@ -141,13 +147,13 @@ const Navbar = () => {
               <div className="flex space-x-4 ml-4">
                 <Link
                   to="/login"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center justify-center w-20 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   {t('common.login')}
                 </Link>
                 <Link
                   to="/register"
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  className="inline-flex items-center justify-center w-24 px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   {t('common.register')}
                 </Link>
@@ -209,10 +215,10 @@ const Navbar = () => {
               isActive('/') 
                 ? 'bg-blue-50 border-blue-500 text-blue-700' 
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+            } flex items-center pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            {t('navigation.home')}
+            <span className="min-w-[100px]">{t('navigation.home')}</span>
           </Link>
           <Link
             to="/recipes"
@@ -220,10 +226,10 @@ const Navbar = () => {
               isActive('/recipes') 
                 ? 'bg-blue-50 border-blue-500 text-blue-700' 
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+            } flex items-center pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            {t('navigation.recipes')}
+            <span className="min-w-[100px]">{t('navigation.recipes')}</span>
           </Link>
           <Link
             to="/scan"
@@ -231,10 +237,10 @@ const Navbar = () => {
               isActive('/scan') 
                 ? 'bg-blue-50 border-blue-500 text-blue-700' 
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+            } flex items-center pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            {t('navigation.scanIngredients')}
+            <span className="min-w-[100px]">{t('navigation.scanIngredients')}</span>
           </Link>
           <Link
             to="/meal-plan"
@@ -242,10 +248,10 @@ const Navbar = () => {
               isActive('/meal-plan') 
                 ? 'bg-blue-50 border-blue-500 text-blue-700' 
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+            } flex items-center pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            {t('navigation.mealPlans')}
+            <span className="min-w-[100px]">{t('navigation.mealPlans')}</span>
           </Link>
           <Link
             to="/shopping-list"
@@ -253,10 +259,10 @@ const Navbar = () => {
               isActive('/shopping-list') 
                 ? 'bg-blue-50 border-blue-500 text-blue-700' 
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:border-gray-300 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
+            } flex items-center pl-3 pr-4 py-2 border-l-4 text-base font-medium`}
             onClick={() => setIsMenuOpen(false)}
           >
-            {t('navigation.shoppingLists')}
+            <span className="min-w-[100px]">{t('navigation.shoppingLists')}</span>
           </Link>
         </div>
         
@@ -282,9 +288,6 @@ const Navbar = () => {
                 <div className="text-base font-medium text-gray-800">{t('common.guest')}</div>
               )}
             </div>
-            <div className="ml-auto">
-              <LanguageSwitcher />
-            </div>
           </div>
           <div className="mt-3 space-y-1">
             {isAuthenticated ? (
@@ -294,7 +297,7 @@ const Navbar = () => {
                   className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  {t('common.profile')}
+                  <span className="min-w-[80px] inline-block">{t('common.profile')}</span>
                 </Link>
                 <button
                   className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
@@ -303,7 +306,7 @@ const Navbar = () => {
                     setIsMenuOpen(false);
                   }}
                 >
-                  {t('common.logout')}
+                  <span className="min-w-[80px] inline-block">{t('common.logout')}</span>
                 </button>
               </>
             ) : (
@@ -313,14 +316,14 @@ const Navbar = () => {
                   className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  {t('common.login')}
+                  <span className="min-w-[80px] inline-block">{t('common.login')}</span>
                 </Link>
                 <Link
                   to="/register"
                   className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
                   onClick={() => setIsMenuOpen(false)}
                 >
-                  {t('common.register')}
+                  <span className="min-w-[80px] inline-block">{t('common.register')}</span>
                 </Link>
               </>
             )}

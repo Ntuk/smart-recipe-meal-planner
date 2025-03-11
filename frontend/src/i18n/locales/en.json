@@ -21,7 +21,8 @@
     "profile": "Profile",
     "show": "Show",
     "hide": "Hide",
-    "guest": "Guest"
+    "guest": "Guest",
+    "allRightsReserved": "All rights reserved"
   },
   "navigation": {
     "home": "Home",
@@ -88,7 +89,11 @@
     "tagsPlaceholder": "Comma-separated tags (e.g. Italian, Pasta, Quick)",
     "titleRequired": "Title is required",
     "ingredientsRequired": "At least one ingredient is required",
-    "instructionsRequired": "Instructions are required"
+    "instructionsRequired": "Instructions are required",
+    "searchPlaceholder": "e.g., pasta, chicken, tomatoes",
+    "allCuisines": "All Cuisines",
+    "allDifficulties": "All Difficulties",
+    "moreIngredients": "+{{count}} more"
   },
   "scan": {
     "title": "Ingredient Scanner",
@@ -122,12 +127,20 @@
   },
   "mealPlan": {
     "title": "Meal Plan",
+    "description": "Create a personalized meal plan based on your ingredients and preferences",
     "createPlan": "Create Meal Plan",
     "selectRecipes": "Select Recipes",
     "planName": "Plan Name",
     "days": "Days",
     "generateShoppingList": "Generate Shopping List",
-    "noMealPlansFound": "No meal plans found"
+    "noMealPlansFound": "No meal plans found",
+    "defaultName": "My Meal Plan",
+    "enterIngredient": "Enter an ingredient",
+    "noIngredientsAdded": "No ingredients added yet",
+    "generatePlan": "Generate Plan",
+    "day": "Day",
+    "missing": "missing",
+    "missingIngredientsDescription": "These ingredients are needed for your meal plan but aren't in your available ingredients."
   },
   "categories": {
     "produce": "Produce",

@@ -7,7 +7,7 @@ const HomePage = () => {
   const { t } = useTranslation();
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="bg-gray-100">
       <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
         <div className="text-center">
           <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl sm:tracking-tight lg:text-6xl">
@@ -33,9 +33,6 @@ const HomePage = () => {
             >
               {t('home.browseRecipes')}
             </Link>
-          </div>
-          <div className="mt-4 text-sm text-gray-500">
-            {t('home.buttonClickCount')}: {count}
           </div>
         </div>
 
