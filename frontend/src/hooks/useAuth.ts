@@ -1,110 +1,135 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { authApiService } from '../services/api';
+import jwtDecode from 'jwt-decode';
 
 interface User {
   id: string;
   username: string;
   email: string;
-  preferences?: {
-    dietary_preferences?: string[];
-    favorite_cuisines?: string[];
-  };
+}
+
+interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+}
+
+interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+interface RegisterData {
+  username: string;
+  email: string;
+  password: string;
 }
 
 export const useAuth = () => {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<AuthState>({
+    user: null,
+    isAuthenticated: false,
+    isLoading: true,
+  });
 
-  // Mock implementation for development
-  const register = useCallback((userData: { username: string; email: string; password: string }) => {
-    setIsLoading(true);
-    setError(null);
-    
-    // Simulate API call
-    setTimeout(() => {
-      const mockUser: User = {
-        id: '1',
-        username: userData.username,
-        email: userData.email,
-        preferences: {
-          dietary_preferences: [],
-          favorite_cuisines: []
-        }
-      };
-      
-      setUser(mockUser);
-      setIsLoading(false);
-      // Store in localStorage to persist across refreshes
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    }, 1000);
-  }, []);
-
-  const login = useCallback((credentials: { email: string; password: string }) => {
-    setIsLoading(true);
-    setError(null);
-    
-    // Simulate API call
-    setTimeout(() => {
-      const mockUser: User = {
-        id: '1',
-        username: 'user',
-        email: credentials.email,
-        preferences: {
-          dietary_preferences: ['Vegetarian'],
-          favorite_cuisines: ['Italian', 'Mexican']
-        }
-      };
-      
-      setUser(mockUser);
-      setIsLoading(false);
-      // Store in localStorage to persist across refreshes
-      localStorage.setItem('user', JSON.stringify(mockUser));
-    }, 1000);
-  }, []);
-
-  const logout = useCallback(() => {
-    setUser(null);
-    localStorage.removeItem('user');
-  }, []);
-
-  const updateProfile = useCallback((profileData: any) => {
-    setIsLoading(true);
-    setError(null);
-    
-    // Simulate API call
-    setTimeout(() => {
-      if (user) {
-        const updatedUser = {
-          ...user,
-          ...profileData,
-        };
-        setUser(updatedUser);
-        localStorage.setItem('user', JSON.stringify(updatedUser));
-      }
-      setIsLoading(false);
-    }, 1000);
-  }, [user]);
-
-  // Check if user is already logged in (from localStorage)
+  // Check if user is already logged in
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch (e) {
-        localStorage.removeItem('user');
+    const checkAuth = async () => {
+      const token = localStorage.getItem('auth_token');
+      
+      if (token) {
+        try {
+          // Get user profile from API
+          const userData = await authApiService.getProfile();
+          
+          setAuthState({
+            user: userData,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
+          // Token might be invalid or expired
+          localStorage.removeItem('auth_token');
+          setAuthState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+          });
+        }
+      } else {
+        setAuthState({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
       }
+    };
+
+    checkAuth();
+  }, []);
+
+  const login = useCallback(async (credentials: LoginCredentials) => {
+    try {
+      const response = await authApiService.login(credentials);
+      
+      // Get user profile after successful login
+      const userData = await authApiService.getProfile();
+      
+      setAuthState({
+        user: userData,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Login error:', error);
+      return { 
+        success: false, 
+        error: 'Invalid email or password' 
+      };
     }
   }, []);
 
+  const register = useCallback(async (data: RegisterData) => {
+    try {
+      await authApiService.register(data);
+      
+      // Get user profile after successful registration
+      const userData = await authApiService.getProfile();
+      
+      setAuthState({
+        user: userData,
+        isAuthenticated: true,
+        isLoading: false,
+      });
+      
+      return { success: true };
+    } catch (error: any) {
+      console.error('Registration error:', error);
+      return { 
+        success: false, 
+        error: error.response?.data?.detail || 'Registration failed' 
+      };
+    }
+  }, []);
+
+  const logout = useCallback(() => {
+    authApiService.logout();
+    setAuthState({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+    });
+  }, []);
+
   return {
-    user,
-    isAuthenticated: !!user,
-    isLoading,
-    error,
-    register,
+    user: authState.user,
+    isAuthenticated: authState.isAuthenticated,
+    isLoading: authState.isLoading,
     login,
+    register,
     logout,
-    updateProfile,
   };
 }; 

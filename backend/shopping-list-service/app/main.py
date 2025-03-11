@@ -1,22 +1,31 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
-import os
-import httpx
-import logging
-from bson import ObjectId
 from datetime import datetime
+import os
+import uuid
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
+MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://localhost:8003")
 
 # Initialize FastAPI app
-app = FastAPI(title="Shopping List Service API", description="API for generating shopping lists based on meal plans")
+app = FastAPI(title="Shopping List Service", description="Service for managing shopping lists")
 
-# Configure CORS
+# Security
+security = HTTPBearer()
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origins
@@ -25,215 +34,267 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
-MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://localhost:8003")
-
-# MongoDB client
-client = None
-
-# Models
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
-
-class ShoppingListItem(BaseModel):
-    ingredient: str
-    quantity: Optional[str] = None
-    checked: bool = False
-
-class ShoppingList(BaseModel):
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
-    user_id: Optional[str] = None
-    meal_plan_id: str
-    name: str
-    items: List[ShoppingListItem]
-    created_at: Optional[str] = None
-
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
-class ShoppingListCreate(BaseModel):
-    meal_plan_id: str
-    name: str
-    available_ingredients: List[str] = []
-    user_id: Optional[str] = None
-
-class ShoppingListResponse(BaseModel):
-    id: str
-    meal_plan_id: str
-    name: str
-    items: List[ShoppingListItem]
-    created_at: Optional[str] = None
-
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    global client
-    try:
-        client = AsyncIOMotorClient(MONGODB_URI)
-        # Validate the connection
-        await client.admin.command('ping')
-        logger.info("Connected to MongoDB")
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise
+    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
+    app.mongodb = app.mongodb_client[DB_NAME]
+    
+    # Create indexes for shopping lists collection
+    await app.mongodb["shopping_lists"].create_index("user_id")
+    await app.mongodb["shopping_lists"].create_index("meal_plan_id")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    global client
-    if client:
-        client.close()
-        logger.info("MongoDB connection closed")
+    app.mongodb_client.close()
 
-# Dependency to get database
-async def get_database():
-    return client[DATABASE_NAME]
+# Models
+class ShoppingListItem(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+    checked: bool = False
 
-# Helper function to fetch meal plan from Meal Planning Service
-async def fetch_meal_plan(meal_plan_id):
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{MEAL_PLANNING_SERVICE_URL}/meal-plans/{meal_plan_id}")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"Error fetching meal plan {meal_plan_id}: {e}")
-        return None
+class ShoppingListBase(BaseModel):
+    name: str
+    items: List[ShoppingListItem]
+    meal_plan_id: Optional[str] = None
+    notes: Optional[str] = None
+
+class ShoppingListCreate(ShoppingListBase):
+    pass
+
+class ShoppingList(ShoppingListBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+class ShoppingListUpdate(BaseModel):
+    name: Optional[str] = None
+    items: Optional[List[ShoppingListItem]] = None
+    notes: Optional[str] = None
+
+class ItemCheckUpdate(BaseModel):
+    checked: bool
+
+# Authentication dependency
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{AUTH_SERVICE_URL}/profile",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable",
+            )
+
+# Helper functions
+async def get_meal_plan_ingredients(meal_plan_id: str, token: str):
+    """Get ingredients from a meal plan"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{MEAL_PLANNING_SERVICE_URL}/meal-plans/{meal_plan_id}",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if response.status_code == 200:
+                meal_plan = response.json()
+                # Extract ingredients from recipes in the meal plan
+                ingredients = []
+                for day in meal_plan.get("days", []):
+                    for meal in day.get("meals", []):
+                        for recipe in meal.get("recipes", []):
+                            for ingredient in recipe.get("ingredients", []):
+                                # Convert to shopping list item
+                                ingredients.append(
+                                    ShoppingListItem(
+                                        name=ingredient.get("name", ""),
+                                        quantity=ingredient.get("quantity", ""),
+                                        unit=ingredient.get("unit", "")
+                                    )
+                                )
+                return ingredients
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Meal plan with ID {meal_plan_id} not found"
+                )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Meal planning service unavailable",
+            )
 
 # Routes
-@app.get("/")
-async def root():
-    return {"message": "Shopping List Service API"}
+@app.post("/shopping-lists", response_model=ShoppingList, status_code=status.HTTP_201_CREATED)
+async def create_shopping_list(
+    shopping_list: ShoppingListCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    now = datetime.utcnow()
+    shopping_list_id = str(uuid.uuid4())
+    
+    # If meal_plan_id is provided, get ingredients from the meal plan
+    items = shopping_list.items
+    if shopping_list.meal_plan_id:
+        token = None
+        for header in security.model.scheme_name:
+            if header.lower() == "authorization":
+                token = header.split(" ")[1]
+                break
+        
+        if token:
+            try:
+                meal_plan_ingredients = await get_meal_plan_ingredients(shopping_list.meal_plan_id, token)
+                # Merge with provided items
+                item_names = {item.name.lower() for item in items}
+                for ingredient in meal_plan_ingredients:
+                    if ingredient.name.lower() not in item_names:
+                        items.append(ingredient)
+            except Exception as e:
+                # Continue with provided items if meal plan ingredients can't be fetched
+                pass
+    
+    shopping_list_data = shopping_list.dict()
+    shopping_list_data.update({
+        "id": shopping_list_id,
+        "user_id": current_user["id"],
+        "items": [item.dict() for item in items],
+        "created_at": now,
+        "updated_at": now
+    })
+    
+    await app.mongodb["shopping_lists"].insert_one(shopping_list_data)
+    
+    return shopping_list_data
+
+@app.get("/shopping-lists", response_model=List[ShoppingList])
+async def get_shopping_lists(current_user: dict = Depends(get_current_user)):
+    shopping_lists = []
+    cursor = app.mongodb["shopping_lists"].find({"user_id": current_user["id"]}).sort("created_at", -1)
+    async for document in cursor:
+        shopping_lists.append(document)
+    
+    return shopping_lists
+
+@app.get("/shopping-lists/{shopping_list_id}", response_model=ShoppingList)
+async def get_shopping_list(shopping_list_id: str, current_user: dict = Depends(get_current_user)):
+    shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id, "user_id": current_user["id"]})
+    
+    if not shopping_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Shopping list with ID {shopping_list_id} not found"
+        )
+    
+    return shopping_list
+
+@app.put("/shopping-lists/{shopping_list_id}", response_model=ShoppingList)
+async def update_shopping_list(
+    shopping_list_id: str,
+    shopping_list_update: ShoppingListUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    # Check if shopping list exists
+    shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id, "user_id": current_user["id"]})
+    
+    if not shopping_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Shopping list with ID {shopping_list_id} not found"
+        )
+    
+    # Update shopping list
+    update_data = shopping_list_update.dict(exclude_unset=True)
+    if "items" in update_data:
+        update_data["items"] = [item.dict() for item in shopping_list_update.items]
+    
+    update_data["updated_at"] = datetime.utcnow()
+    
+    await app.mongodb["shopping_lists"].update_one(
+        {"id": shopping_list_id},
+        {"$set": update_data}
+    )
+    
+    # Get updated shopping list
+    updated_shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id})
+    
+    return updated_shopping_list
+
+@app.put("/shopping-lists/{shopping_list_id}/items/{item_name}/check", response_model=ShoppingList)
+async def check_item(
+    shopping_list_id: str,
+    item_name: str,
+    update: ItemCheckUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    # Check if shopping list exists
+    shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id, "user_id": current_user["id"]})
+    
+    if not shopping_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Shopping list with ID {shopping_list_id} not found"
+        )
+    
+    # Find the item in the shopping list
+    item_found = False
+    for item in shopping_list["items"]:
+        if item["name"].lower() == item_name.lower():
+            item["checked"] = update.checked
+            item_found = True
+    
+    if not item_found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item {item_name} not found in shopping list"
+        )
+    
+    # Update shopping list
+    await app.mongodb["shopping_lists"].update_one(
+        {"id": shopping_list_id},
+        {
+            "$set": {
+                "items": shopping_list["items"],
+                "updated_at": datetime.utcnow()
+            }
+        }
+    )
+    
+    # Get updated shopping list
+    updated_shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id})
+    
+    return updated_shopping_list
+
+@app.delete("/shopping-lists/{shopping_list_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_shopping_list(shopping_list_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if shopping list exists
+    shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id, "user_id": current_user["id"]})
+    
+    if not shopping_list:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Shopping list with ID {shopping_list_id} not found"
+        )
+    
+    # Delete shopping list
+    await app.mongodb["shopping_lists"].delete_one({"id": shopping_list_id})
+    
+    return None
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
-
-@app.post("/shopping-lists", response_model=ShoppingListResponse)
-async def create_shopping_list(shopping_list: ShoppingListCreate, db=Depends(get_database)):
-    # Fetch meal plan
-    meal_plan = await fetch_meal_plan(shopping_list.meal_plan_id)
-    if not meal_plan:
-        raise HTTPException(status_code=404, detail="Meal plan not found")
-    
-    # Extract all ingredients from recipes in the meal plan
-    all_ingredients = set()
-    for recipe in meal_plan["recipes"]:
-        all_ingredients.update(recipe["ingredients"])
-    
-    # Remove ingredients that are already available
-    missing_ingredients = all_ingredients - set(shopping_list.available_ingredients)
-    
-    # Create shopping list items
-    items = [{"ingredient": ingredient, "quantity": None, "checked": False} for ingredient in missing_ingredients]
-    
-    # Create shopping list
-    new_shopping_list = {
-        "meal_plan_id": shopping_list.meal_plan_id,
-        "name": shopping_list.name,
-        "items": items,
-        "created_at": datetime.now().isoformat(),
-    }
-    
-    if shopping_list.user_id:
-        new_shopping_list["user_id"] = shopping_list.user_id
-    
-    result = await db.shopping_lists.insert_one(new_shopping_list)
-    
-    # Fetch the created shopping list
-    created_shopping_list = await db.shopping_lists.find_one({"_id": result.inserted_id})
-    
-    # Prepare response
-    response = {
-        "id": str(created_shopping_list["_id"]),
-        "meal_plan_id": created_shopping_list["meal_plan_id"],
-        "name": created_shopping_list["name"],
-        "items": created_shopping_list["items"],
-        "created_at": created_shopping_list["created_at"],
-    }
-    
-    return response
-
-@app.get("/shopping-lists/{shopping_list_id}", response_model=ShoppingListResponse)
-async def get_shopping_list(shopping_list_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(shopping_list_id):
-        raise HTTPException(status_code=400, detail="Invalid shopping list ID format")
-    
-    shopping_list = await db.shopping_lists.find_one({"_id": ObjectId(shopping_list_id)})
-    if shopping_list is None:
-        raise HTTPException(status_code=404, detail="Shopping list not found")
-    
-    # Prepare response
-    response = {
-        "id": str(shopping_list["_id"]),
-        "meal_plan_id": shopping_list["meal_plan_id"],
-        "name": shopping_list["name"],
-        "items": shopping_list["items"],
-        "created_at": shopping_list.get("created_at"),
-    }
-    
-    return response
-
-@app.get("/shopping-lists", response_model=List[ShoppingList])
-async def get_shopping_lists(user_id: Optional[str] = None, db=Depends(get_database)):
-    query = {}
-    if user_id:
-        query["user_id"] = user_id
-    
-    shopping_lists = await db.shopping_lists.find(query).to_list(100)
-    return shopping_lists
-
-@app.put("/shopping-lists/{shopping_list_id}/items/{ingredient}/check", response_model=ShoppingListResponse)
-async def check_shopping_list_item(shopping_list_id: str, ingredient: str, checked: bool = True, db=Depends(get_database)):
-    if not ObjectId.is_valid(shopping_list_id):
-        raise HTTPException(status_code=400, detail="Invalid shopping list ID format")
-    
-    # Update the checked status of the item
-    result = await db.shopping_lists.update_one(
-        {"_id": ObjectId(shopping_list_id), "items.ingredient": ingredient},
-        {"$set": {"items.$.checked": checked}}
-    )
-    
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Shopping list or item not found")
-    
-    # Fetch the updated shopping list
-    updated_shopping_list = await db.shopping_lists.find_one({"_id": ObjectId(shopping_list_id)})
-    
-    # Prepare response
-    response = {
-        "id": str(updated_shopping_list["_id"]),
-        "meal_plan_id": updated_shopping_list["meal_plan_id"],
-        "name": updated_shopping_list["name"],
-        "items": updated_shopping_list["items"],
-        "created_at": updated_shopping_list.get("created_at"),
-    }
-    
-    return response
-
-@app.delete("/shopping-lists/{shopping_list_id}")
-async def delete_shopping_list(shopping_list_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(shopping_list_id):
-        raise HTTPException(status_code=400, detail="Invalid shopping list ID format")
-    
-    result = await db.shopping_lists.delete_one({"_id": ObjectId(shopping_list_id)})
-    
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Shopping list not found")
-    
-    return {"message": "Shopping list deleted successfully"} 
+    return {"status": "healthy"} 

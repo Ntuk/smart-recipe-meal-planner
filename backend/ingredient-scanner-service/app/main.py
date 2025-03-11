@@ -1,23 +1,33 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime
 import os
 import io
-import logging
-from PIL import Image
+import uuid
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import pytesseract
-import re
+from PIL import Image
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
 
 # Initialize FastAPI app
-app = FastAPI(title="Ingredient Scanner Service API", description="API for scanning ingredients from images")
+app = FastAPI(title="Ingredient Scanner Service", description="Service for scanning and extracting ingredients from images")
 
-# Configure CORS
+# Security
+security = HTTPBearer()
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origins
@@ -26,129 +36,207 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
-
-# MongoDB client
-client = None
-
-# Models
-class IngredientList(BaseModel):
-    ingredients: List[str]
-
-# Common food ingredients for better detection
-COMMON_INGREDIENTS = [
-    "salt", "pepper", "sugar", "flour", "oil", "butter", "milk", "eggs", "water",
-    "chicken", "beef", "pork", "fish", "rice", "pasta", "tomato", "onion", "garlic",
-    "carrot", "potato", "cheese", "yogurt", "cream", "lemon", "lime", "vinegar",
-    "soy sauce", "olive oil", "vegetable oil", "bread", "honey", "maple syrup",
-    "cinnamon", "vanilla", "chocolate", "nuts", "beans", "corn", "peas", "spinach",
-    "lettuce", "cabbage", "mushroom", "bell pepper", "chili", "cumin", "oregano",
-    "basil", "thyme", "rosemary", "parsley", "cilantro", "ginger", "turmeric"
-]
-
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    global client
-    try:
-        client = AsyncIOMotorClient(MONGODB_URI)
-        # Validate the connection
-        await client.admin.command('ping')
-        logger.info("Connected to MongoDB")
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise
+    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
+    app.mongodb = app.mongodb_client[DB_NAME]
+    
+    # Create indexes for scans collection
+    await app.mongodb["scans"].create_index("user_id")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    global client
-    if client:
-        client.close()
-        logger.info("MongoDB connection closed")
+    app.mongodb_client.close()
 
-# Helper function to extract ingredients from text
-def extract_ingredients(text):
-    # Convert to lowercase
-    text = text.lower()
-    
-    # Split by common delimiters
-    lines = re.split(r'[\n,;]', text)
-    
-    # Clean up lines
-    lines = [line.strip() for line in lines if line.strip()]
-    
-    # Extract potential ingredients
-    potential_ingredients = []
+# Models
+class IngredientItem(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+
+class ScanResult(BaseModel):
+    id: str
+    user_id: str
+    ingredients: List[IngredientItem]
+    original_text: str
+    created_at: datetime
+
+class ManualInputRequest(BaseModel):
+    text: str
+
+# Authentication dependency
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{AUTH_SERVICE_URL}/profile",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable",
+            )
+
+# Helper functions
+def extract_ingredients_from_text(text: str) -> List[IngredientItem]:
+    """
+    Extract ingredients from text using simple heuristics.
+    In a real application, this would use NLP or a more sophisticated algorithm.
+    """
+    ingredients = []
+    lines = text.strip().split('\n')
     
     for line in lines:
-        # Check if line contains a common ingredient
-        for ingredient in COMMON_INGREDIENTS:
-            if ingredient in line:
-                # Extract the ingredient with some context
-                match = re.search(r'(\d+\s*[a-zA-Z]*\s*' + ingredient + r'|\b' + ingredient + r'\b)', line)
-                if match:
-                    potential_ingredients.append(match.group(0).strip())
-                else:
-                    potential_ingredients.append(ingredient)
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Simple parsing logic - in a real app this would be more sophisticated
+        parts = line.split(' ', 1)
+        if len(parts) > 1 and parts[0].replace('.', '', 1).isdigit():
+            # Assume first part is quantity
+            quantity = parts[0]
+            rest = parts[1].strip()
+            
+            # Try to extract unit
+            unit_words = ['cup', 'cups', 'tbsp', 'tsp', 'tablespoon', 'teaspoon', 'oz', 'ounce', 'pound', 'lb', 'g', 'kg', 'ml', 'l']
+            unit = None
+            name = rest
+            
+            for unit_word in unit_words:
+                if rest.lower().startswith(unit_word + ' '):
+                    unit = unit_word
+                    name = rest[len(unit_word):].strip()
+                    break
+                    
+            ingredients.append(IngredientItem(name=name, quantity=quantity, unit=unit))
+        else:
+            # Just add as ingredient name
+            ingredients.append(IngredientItem(name=line))
     
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_ingredients = []
-    for item in potential_ingredients:
-        if item not in seen:
-            seen.add(item)
-            unique_ingredients.append(item)
-    
-    return unique_ingredients
+    return ingredients
 
 # Routes
-@app.get("/")
-async def root():
-    return {"message": "Ingredient Scanner Service API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-@app.post("/scan", response_model=IngredientList)
-async def scan_ingredients(file: UploadFile = File(...)):
-    # Check if the file is an image
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
+@app.post("/scan", response_model=ScanResult)
+async def scan_ingredients(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    # Check file type
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File must be an image"
+        )
     
     try:
-        # Read the image
+        # Read image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Extract text from image using OCR
+        # Extract text using OCR
         text = pytesseract.image_to_string(image)
         
         # Extract ingredients from text
-        ingredients = extract_ingredients(text)
+        ingredients = extract_ingredients_from_text(text)
         
-        # If no ingredients found, return a helpful message
-        if not ingredients:
-            return {"ingredients": ["No ingredients detected. Try a clearer image or manually enter ingredients."]}
+        # Save scan result
+        scan_id = str(uuid.uuid4())
+        now = datetime.utcnow()
         
-        return {"ingredients": ingredients}
+        scan_data = {
+            "id": scan_id,
+            "user_id": current_user["id"],
+            "ingredients": [ingredient.dict() for ingredient in ingredients],
+            "original_text": text,
+            "created_at": now
+        }
+        
+        await app.mongodb["scans"].insert_one(scan_data)
+        
+        return scan_data
     except Exception as e:
-        logger.error(f"Error processing image: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing image: {str(e)}"
+        )
 
-@app.post("/manual-input", response_model=IngredientList)
-async def manual_input(text: str):
+@app.post("/manual-input", response_model=ScanResult)
+async def manual_input(
+    request: ManualInputRequest,
+    current_user: dict = Depends(get_current_user)
+):
     try:
         # Extract ingredients from text
-        ingredients = extract_ingredients(text)
+        ingredients = extract_ingredients_from_text(request.text)
         
-        # If no ingredients found, return a helpful message
-        if not ingredients:
-            return {"ingredients": ["No ingredients detected. Please check your input."]}
+        # Save scan result
+        scan_id = str(uuid.uuid4())
+        now = datetime.utcnow()
         
-        return {"ingredients": ingredients}
+        scan_data = {
+            "id": scan_id,
+            "user_id": current_user["id"],
+            "ingredients": [ingredient.dict() for ingredient in ingredients],
+            "original_text": request.text,
+            "created_at": now
+        }
+        
+        await app.mongodb["scans"].insert_one(scan_data)
+        
+        return scan_data
     except Exception as e:
-        logger.error(f"Error processing text: {e}")
-        raise HTTPException(status_code=500, detail=f"Error processing text: {str(e)}") 
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error processing text: {str(e)}"
+        )
+
+@app.get("/scans", response_model=List[ScanResult])
+async def get_scans(current_user: dict = Depends(get_current_user)):
+    scans = []
+    cursor = app.mongodb["scans"].find({"user_id": current_user["id"]}).sort("created_at", -1)
+    async for document in cursor:
+        scans.append(document)
+    
+    return scans
+
+@app.get("/scans/{scan_id}", response_model=ScanResult)
+async def get_scan(scan_id: str, current_user: dict = Depends(get_current_user)):
+    scan = await app.mongodb["scans"].find_one({"id": scan_id, "user_id": current_user["id"]})
+    
+    if not scan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found"
+        )
+    
+    return scan
+
+@app.delete("/scans/{scan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_user)):
+    scan = await app.mongodb["scans"].find_one({"id": scan_id, "user_id": current_user["id"]})
+    
+    if not scan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Scan with ID {scan_id} not found"
+        )
+    
+    await app.mongodb["scans"].delete_one({"id": scan_id})
+    
+    return None
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"} 

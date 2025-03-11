@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -8,10 +8,17 @@ import httpx
 import logging
 import random
 from bson import ObjectId
+import uuid
+from dotenv import load_dotenv
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from datetime import datetime, date
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 # Initialize FastAPI app
 app = FastAPI(title="Meal Planning Service API", description="API for planning meals based on ingredients and preferences")
@@ -33,6 +40,9 @@ RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://localhost:8001")
 # MongoDB client
 client = None
 
+# Security
+security = HTTPBearer()
+
 # Models
 class PyObjectId(ObjectId):
     @classmethod
@@ -46,8 +56,8 @@ class PyObjectId(ObjectId):
         return ObjectId(v)
 
     @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
+    def __get_pydantic_json_schema__(cls, _schema_generator, _field_schema):
+        return {"type": "string"}
 
 class Recipe(BaseModel):
     id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
@@ -64,30 +74,49 @@ class Recipe(BaseModel):
     nutritional_info: Optional[dict] = None
 
     class Config:
-        allow_population_by_field_name = True
+        populate_by_name = True
         arbitrary_types_allowed = True
         json_encoders = {ObjectId: str}
 
-class MealPlan(BaseModel):
-    id: Optional[PyObjectId] = Field(default_factory=PyObjectId, alias="_id")
-    user_id: Optional[str] = None
+class RecipeRef(BaseModel):
+    id: str
     name: str
-    recipes: List[str]  # List of recipe IDs
-    days: int
-    created_at: Optional[str] = None
-    dietary_preferences: List[str] = []
+    prep_time: int
+    cook_time: int
+    servings: int
+    image_url: Optional[str] = None
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+class Meal(BaseModel):
+    name: str  # e.g., "Breakfast", "Lunch", "Dinner", "Snack"
+    time: Optional[str] = None  # e.g., "08:00", "12:30"
+    recipes: List[RecipeRef] = []
+    notes: Optional[str] = None
 
-class MealPlanCreate(BaseModel):
+class MealPlanDay(BaseModel):
+    date: date
+    meals: List[Meal] = []
+    notes: Optional[str] = None
+
+class MealPlanBase(BaseModel):
     name: str
-    days: int = 7
-    dietary_preferences: List[str] = []
-    available_ingredients: List[str] = []
-    user_id: Optional[str] = None
+    start_date: date
+    end_date: date
+    days: List[MealPlanDay] = []
+    notes: Optional[str] = None
+
+class MealPlanCreate(MealPlanBase):
+    pass
+
+class MealPlan(MealPlanBase):
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+class MealPlanUpdate(BaseModel):
+    name: Optional[str] = None
+    days: Optional[List[MealPlanDay]] = None
+    notes: Optional[str] = None
 
 class MealPlanResponse(BaseModel):
     id: str
@@ -120,6 +149,29 @@ async def shutdown_db_client():
 # Dependency to get database
 async def get_database():
     return client[DATABASE_NAME]
+
+# Authentication dependency
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{RECIPE_SERVICE_URL}/profile",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable",
+            )
 
 # Helper function to fetch recipes from Recipe Service
 async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
@@ -160,120 +212,145 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-@app.post("/meal-plans", response_model=MealPlanResponse)
-async def create_meal_plan(meal_plan: MealPlanCreate, db=Depends(get_database)):
-    # Fetch recipes based on available ingredients and dietary preferences
-    recipes = await fetch_recipes(
-        ingredients=meal_plan.available_ingredients,
-        tags=meal_plan.dietary_preferences
-    )
+@app.post("/meal-plans", response_model=MealPlan, status_code=status.HTTP_201_CREATED)
+async def create_meal_plan(
+    meal_plan: MealPlanCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    now = datetime.utcnow()
+    meal_plan_id = str(uuid.uuid4())
     
-    # If no recipes found with the exact ingredients, try to find recipes with at least some of the ingredients
-    if not recipes and meal_plan.available_ingredients:
-        # Try with fewer ingredients
-        for i in range(len(meal_plan.available_ingredients) - 1, 0, -1):
-            subset = meal_plan.available_ingredients[:i]
-            recipes = await fetch_recipes(ingredients=subset, tags=meal_plan.dietary_preferences)
-            if recipes:
-                break
+    # Convert days to dict for MongoDB
+    days_data = []
+    for day in meal_plan.days:
+        day_dict = day.dict()
+        day_dict["date"] = day.date.isoformat()
+        days_data.append(day_dict)
     
-    # If still no recipes, fetch any recipes that match dietary preferences
-    if not recipes and meal_plan.dietary_preferences:
-        recipes = await fetch_recipes(tags=meal_plan.dietary_preferences)
+    meal_plan_data = meal_plan.dict(exclude={"days"})
+    meal_plan_data.update({
+        "id": meal_plan_id,
+        "user_id": current_user["id"],
+        "days": days_data,
+        "start_date": meal_plan.start_date.isoformat(),
+        "end_date": meal_plan.end_date.isoformat(),
+        "created_at": now,
+        "updated_at": now
+    })
     
-    # If still no recipes, fetch any recipes
-    if not recipes:
-        recipes = await fetch_recipes()
+    await get_database().meal_plans.insert_one(meal_plan_data)
     
-    # Limit recipes to the number of days in the meal plan
-    if len(recipes) > meal_plan.days:
-        # Randomly select recipes for variety
-        recipes = random.sample(recipes, meal_plan.days)
+    # Convert dates back to date objects for response
+    meal_plan_data["start_date"] = meal_plan.start_date
+    meal_plan_data["end_date"] = meal_plan.end_date
+    for day in meal_plan_data["days"]:
+        day["date"] = date.fromisoformat(day["date"])
     
-    # Create meal plan
-    recipe_ids = [recipe["_id"] for recipe in recipes]
-    
-    from datetime import datetime
-    new_meal_plan = {
-        "name": meal_plan.name,
-        "recipes": recipe_ids,
-        "days": meal_plan.days,
-        "created_at": datetime.now().isoformat(),
-        "dietary_preferences": meal_plan.dietary_preferences,
-    }
-    
-    if meal_plan.user_id:
-        new_meal_plan["user_id"] = meal_plan.user_id
-    
-    result = await db.meal_plans.insert_one(new_meal_plan)
-    
-    # Fetch the created meal plan
-    created_meal_plan = await db.meal_plans.find_one({"_id": result.inserted_id})
-    
-    # Fetch full recipe details for response
-    recipe_details = []
-    for recipe_id in created_meal_plan["recipes"]:
-        recipe = await fetch_recipe_by_id(recipe_id)
-        if recipe:
-            recipe_details.append(recipe)
-    
-    # Prepare response
-    response = {
-        "id": str(created_meal_plan["_id"]),
-        "name": created_meal_plan["name"],
-        "recipes": recipe_details,
-        "days": created_meal_plan["days"],
-        "created_at": created_meal_plan["created_at"],
-        "dietary_preferences": created_meal_plan["dietary_preferences"],
-    }
-    
-    return response
-
-@app.get("/meal-plans/{meal_plan_id}", response_model=MealPlanResponse)
-async def get_meal_plan(meal_plan_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(meal_plan_id):
-        raise HTTPException(status_code=400, detail="Invalid meal plan ID format")
-    
-    meal_plan = await db.meal_plans.find_one({"_id": ObjectId(meal_plan_id)})
-    if meal_plan is None:
-        raise HTTPException(status_code=404, detail="Meal plan not found")
-    
-    # Fetch full recipe details for response
-    recipe_details = []
-    for recipe_id in meal_plan["recipes"]:
-        recipe = await fetch_recipe_by_id(recipe_id)
-        if recipe:
-            recipe_details.append(recipe)
-    
-    # Prepare response
-    response = {
-        "id": str(meal_plan["_id"]),
-        "name": meal_plan["name"],
-        "recipes": recipe_details,
-        "days": meal_plan["days"],
-        "created_at": meal_plan.get("created_at"),
-        "dietary_preferences": meal_plan.get("dietary_preferences", []),
-    }
-    
-    return response
+    return meal_plan_data
 
 @app.get("/meal-plans", response_model=List[MealPlan])
-async def get_meal_plans(user_id: Optional[str] = None, db=Depends(get_database)):
-    query = {}
-    if user_id:
-        query["user_id"] = user_id
+async def get_meal_plans(
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    query = {"user_id": current_user["id"]}
     
-    meal_plans = await db.meal_plans.find(query).to_list(100)
+    # Add date filters if provided
+    if start_date:
+        query["start_date"] = {"$gte": start_date.isoformat()}
+    
+    if end_date:
+        query["end_date"] = {"$lte": end_date.isoformat()}
+    
+    meal_plans = []
+    cursor = get_database().meal_plans.find(query).sort("start_date", -1)
+    async for document in cursor:
+        # Convert date strings to date objects
+        document["start_date"] = date.fromisoformat(document["start_date"])
+        document["end_date"] = date.fromisoformat(document["end_date"])
+        for day in document["days"]:
+            day["date"] = date.fromisoformat(day["date"])
+        
+        meal_plans.append(document)
+    
     return meal_plans
 
-@app.delete("/meal-plans/{meal_plan_id}")
-async def delete_meal_plan(meal_plan_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(meal_plan_id):
-        raise HTTPException(status_code=400, detail="Invalid meal plan ID format")
+@app.get("/meal-plans/{meal_plan_id}", response_model=MealPlan)
+async def get_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
+    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
     
-    result = await db.meal_plans.delete_one({"_id": ObjectId(meal_plan_id)})
+    if not meal_plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meal plan with ID {meal_plan_id} not found"
+        )
     
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Meal plan not found")
+    # Convert date strings to date objects
+    meal_plan["start_date"] = date.fromisoformat(meal_plan["start_date"])
+    meal_plan["end_date"] = date.fromisoformat(meal_plan["end_date"])
+    for day in meal_plan["days"]:
+        day["date"] = date.fromisoformat(day["date"])
     
-    return {"message": "Meal plan deleted successfully"} 
+    return meal_plan
+
+@app.put("/meal-plans/{meal_plan_id}", response_model=MealPlan)
+async def update_meal_plan(
+    meal_plan_id: str,
+    meal_plan_update: MealPlanUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    # Check if meal plan exists
+    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
+    
+    if not meal_plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meal plan with ID {meal_plan_id} not found"
+        )
+    
+    # Update meal plan
+    update_data = meal_plan_update.dict(exclude_unset=True)
+    
+    # Convert days to dict for MongoDB if provided
+    if "days" in update_data:
+        days_data = []
+        for day in meal_plan_update.days:
+            day_dict = day.dict()
+            day_dict["date"] = day.date.isoformat()
+            days_data.append(day_dict)
+        update_data["days"] = days_data
+    
+    update_data["updated_at"] = datetime.utcnow()
+    
+    await get_database().meal_plans.update_one(
+        {"id": meal_plan_id},
+        {"$set": update_data}
+    )
+    
+    # Get updated meal plan
+    updated_meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id})
+    
+    # Convert date strings to date objects
+    updated_meal_plan["start_date"] = date.fromisoformat(updated_meal_plan["start_date"])
+    updated_meal_plan["end_date"] = date.fromisoformat(updated_meal_plan["end_date"])
+    for day in updated_meal_plan["days"]:
+        day["date"] = date.fromisoformat(day["date"])
+    
+    return updated_meal_plan
+
+@app.delete("/meal-plans/{meal_plan_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if meal plan exists
+    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
+    
+    if not meal_plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Meal plan with ID {meal_plan_id} not found"
+        )
+    
+    # Delete meal plan
+    await get_database().meal_plans.delete_one({"id": meal_plan_id})
+    
+    return None 

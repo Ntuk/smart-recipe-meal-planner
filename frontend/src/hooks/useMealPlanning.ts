@@ -1,56 +1,105 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { mealPlanningApi } from '../services/api';
+import { useState, useCallback } from 'react';
+import { mealPlanningApiService } from '../services/api';
+import { useAuth } from './useAuth';
 
 // Types
-interface MealPlanCreate {
+interface MealPlan {
+  id: string;
   name: string;
-  days: number;
-  dietary_preferences: string[];
-  available_ingredients: string[];
-  user_id?: string;
+  start_date: string;
+  end_date: string;
+  days: MealPlanDay[];
 }
 
-// Hook for fetching meal plans
-export const useMealPlans = (userId?: string) => {
-  return useQuery({
-    queryKey: ['meal-plans', userId],
-    queryFn: () => mealPlanningApi.getMealPlans(userId),
-  });
-};
+interface MealPlanDay {
+  date: string;
+  meals: Meal[];
+  notes?: string;
+}
 
-// Hook for fetching a single meal plan
-export const useMealPlan = (id: string) => {
-  return useQuery({
-    queryKey: ['meal-plan', id],
-    queryFn: () => mealPlanningApi.getMealPlan(id),
-    enabled: !!id,
-  });
-};
+interface Meal {
+  name: string;
+  time?: string;
+  recipes: Recipe[];
+  notes?: string;
+}
 
-// Hook for creating a meal plan
-export const useCreateMealPlan = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (mealPlan: MealPlanCreate) => mealPlanningApi.createMealPlan(mealPlan),
-    onSuccess: () => {
-      // Invalidate meal plans query to refetch the data
-      queryClient.invalidateQueries({ queryKey: ['meal-plans'] });
-    },
-  });
-};
+interface Recipe {
+  id: string;
+  name: string;
+  prep_time: number;
+  cook_time: number;
+  servings: number;
+  image_url?: string;
+}
 
-// Hook for deleting a meal plan
-export const useDeleteMealPlan = () => {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (id: string) => mealPlanningApi.deleteMealPlan(id),
-    onSuccess: (_, id) => {
-      // Invalidate specific meal plan query
-      queryClient.invalidateQueries({ queryKey: ['meal-plan', id] });
-      // Invalidate meal plans query
-      queryClient.invalidateQueries({ queryKey: ['meal-plans'] });
-    },
-  });
+export const useMealPlanning = () => {
+  const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated } = useAuth();
+
+  const fetchMealPlans = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await mealPlanningApiService.getMealPlans();
+      setMealPlans(response);
+    } catch (err) {
+      console.error('Error fetching meal plans:', err);
+      setError('Failed to fetch meal plans');
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
+
+  const createMealPlan = useCallback(async (mealPlanData: any) => {
+    if (!isAuthenticated) return null;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const response = await mealPlanningApiService.createMealPlan(mealPlanData);
+      setMealPlans(prev => [...prev, response]);
+      return response;
+    } catch (err) {
+      console.error('Error creating meal plan:', err);
+      setError('Failed to create meal plan');
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
+
+  const deleteMealPlan = useCallback(async (mealPlanId: string) => {
+    if (!isAuthenticated) return false;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      await mealPlanningApiService.deleteMealPlan(mealPlanId);
+      setMealPlans(prev => prev.filter(plan => plan.id !== mealPlanId));
+      return true;
+    } catch (err) {
+      console.error('Error deleting meal plan:', err);
+      setError('Failed to delete meal plan');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [isAuthenticated]);
+
+  return {
+    mealPlans,
+    loading,
+    error,
+    fetchMealPlans,
+    createMealPlan,
+    deleteMealPlan
+  };
 }; 

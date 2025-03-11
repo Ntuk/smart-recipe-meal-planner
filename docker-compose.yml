@@ -1,31 +1,32 @@
 version: '3.8'
 
 services:
-  # MongoDB database
+  # Database
   mongodb:
     image: mongo:latest
     container_name: mongodb
+    restart: always
     ports:
       - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
     volumes:
       - mongodb_data:/data/db
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=password
     networks:
       - recipe-network
 
   # Authentication Service
   auth-service:
-    build:
-      context: ./backend/auth-service
+    build: ./backend/auth-service
     container_name: auth-service
+    restart: always
     ports:
       - "8000:8000"
     environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
-      - DATABASE_NAME=recipe_db
-      - SECRET_KEY=your-secret-key-change-in-production
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - DB_NAME=recipe_app
+      - SECRET_KEY=your-secret-key-for-development
     depends_on:
       - mongodb
     networks:
@@ -33,73 +34,81 @@ services:
 
   # Recipe Service
   recipe-service:
-    build:
-      context: ./backend/recipe-service
+    build: ./backend/recipe-service
     container_name: recipe-service
+    restart: always
     ports:
       - "8001:8000"
     environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
-      - DATABASE_NAME=recipe_db
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - DB_NAME=recipe_app
+      - AUTH_SERVICE_URL=http://auth-service:8000
     depends_on:
       - mongodb
+      - auth-service
     networks:
       - recipe-network
 
   # Ingredient Scanner Service
   ingredient-scanner-service:
-    build:
-      context: ./backend/ingredient-scanner-service
+    build: ./backend/ingredient-scanner-service
     container_name: ingredient-scanner-service
+    restart: always
     ports:
       - "8002:8000"
     environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
-      - DATABASE_NAME=recipe_db
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - DB_NAME=recipe_app
+      - AUTH_SERVICE_URL=http://auth-service:8000
     depends_on:
       - mongodb
+      - auth-service
     networks:
       - recipe-network
 
   # Meal Planning Service
   meal-planning-service:
-    build:
-      context: ./backend/meal-planning-service
+    build: ./backend/meal-planning-service
     container_name: meal-planning-service
+    restart: always
     ports:
       - "8003:8000"
     environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
-      - DATABASE_NAME=recipe_db
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - DB_NAME=recipe_app
+      - AUTH_SERVICE_URL=http://auth-service:8000
       - RECIPE_SERVICE_URL=http://recipe-service:8000
     depends_on:
       - mongodb
+      - auth-service
       - recipe-service
     networks:
       - recipe-network
 
   # Shopping List Service
   shopping-list-service:
-    build:
-      context: ./backend/shopping-list-service
+    build: ./backend/shopping-list-service
     container_name: shopping-list-service
+    restart: always
     ports:
       - "8004:8000"
     environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017/
-      - DATABASE_NAME=recipe_db
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - DB_NAME=recipe_app
+      - AUTH_SERVICE_URL=http://auth-service:8000
       - MEAL_PLANNING_SERVICE_URL=http://meal-planning-service:8000
     depends_on:
       - mongodb
+      - auth-service
       - meal-planning-service
     networks:
       - recipe-network
 
   # Frontend
   frontend:
-    build:
-      context: ./frontend
+    build: ./frontend
     container_name: frontend
+    restart: always
     ports:
       - "3000:3000"
     depends_on:

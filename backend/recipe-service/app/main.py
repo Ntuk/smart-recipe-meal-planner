@@ -1,20 +1,30 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict
+from datetime import datetime
 import os
-from bson import ObjectId
-import logging
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+import uuid
+import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
 
 # Initialize FastAPI app
-app = FastAPI(title="Recipe Service API", description="API for managing recipes")
+app = FastAPI(title="Recipe Service", description="Recipe management service for Smart Recipe & Meal Planner")
 
-# Configure CORS
+# Security
+security = HTTPBearer()
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origins
@@ -23,153 +33,205 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
+# Database connection
+@app.on_event("startup")
+async def startup_db_client():
+    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
+    app.mongodb = app.mongodb_client[DB_NAME]
+    
+    # Create indexes for recipes collection
+    await app.mongodb["recipes"].create_index("name")
+    await app.mongodb["recipes"].create_index("tags")
+    await app.mongodb["recipes"].create_index("cuisine")
 
-# MongoDB client
-client = None
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    app.mongodb_client.close()
 
 # Models
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+class Ingredient(BaseModel):
+    name: str
+    quantity: str
+    unit: Optional[str] = None
 
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
+class Step(BaseModel):
+    number: int
+    description: str
 
 class RecipeBase(BaseModel):
-    title: str
-    description: Optional[str] = None
-    ingredients: List[str]
-    instructions: List[str]
-    prep_time_minutes: int
-    cook_time_minutes: int
+    name: str
+    description: str
+    ingredients: List[Ingredient]
+    steps: List[Step]
+    prep_time: int  # in minutes
+    cook_time: int  # in minutes
     servings: int
     tags: List[str] = []
     cuisine: Optional[str] = None
-    difficulty: Optional[str] = None
-    nutritional_info: Optional[dict] = None
+    image_url: Optional[str] = None
+    nutrition: Optional[Dict[str, float]] = None
 
 class RecipeCreate(RecipeBase):
     pass
 
 class Recipe(RecipeBase):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: str
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
 
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
+class RecipeUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    ingredients: Optional[List[Ingredient]] = None
+    steps: Optional[List[Step]] = None
+    prep_time: Optional[int] = None
+    cook_time: Optional[int] = None
+    servings: Optional[int] = None
+    tags: Optional[List[str]] = None
+    cuisine: Optional[str] = None
+    image_url: Optional[str] = None
+    nutrition: Optional[Dict[str, float]] = None
 
-# Database connection
-@app.on_event("startup")
-async def startup_db_client():
-    global client
-    try:
-        client = AsyncIOMotorClient(MONGODB_URI)
-        # Validate the connection
-        await client.admin.command('ping')
-        logger.info("Connected to MongoDB")
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    global client
-    if client:
-        client.close()
-        logger.info("MongoDB connection closed")
-
-# Dependency to get database
-async def get_database():
-    return client[DATABASE_NAME]
+# Authentication dependency
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{AUTH_SERVICE_URL}/profile",
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid authentication credentials",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        except httpx.RequestError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication service unavailable",
+            )
 
 # Routes
-@app.get("/")
-async def root():
-    return {"message": "Recipe Service API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
-@app.post("/recipes", response_model=Recipe)
-async def create_recipe(recipe: RecipeCreate, db=Depends(get_database)):
-    recipe_dict = recipe.dict()
-    result = await db.recipes.insert_one(recipe_dict)
-    created_recipe = await db.recipes.find_one({"_id": result.inserted_id})
-    return created_recipe
+@app.post("/recipes", response_model=Recipe, status_code=status.HTTP_201_CREATED)
+async def create_recipe(recipe: RecipeCreate, current_user: dict = Depends(get_current_user)):
+    now = datetime.utcnow()
+    recipe_id = str(uuid.uuid4())
+    
+    recipe_data = recipe.dict()
+    recipe_data.update({
+        "id": recipe_id,
+        "user_id": current_user["id"],
+        "created_at": now,
+        "updated_at": now
+    })
+    
+    await app.mongodb["recipes"].insert_one(recipe_data)
+    
+    return recipe_data
 
 @app.get("/recipes", response_model=List[Recipe])
 async def get_recipes(
-    ingredients: Optional[str] = None,
-    tags: Optional[str] = None,
+    ingredients: Optional[List[str]] = Query(None),
+    tags: Optional[List[str]] = Query(None),
     cuisine: Optional[str] = None,
-    db=Depends(get_database)
+    current_user: dict = Depends(get_current_user)
 ):
     query = {}
     
+    # Add filters if provided
     if ingredients:
-        ingredient_list = ingredients.split(',')
-        query["ingredients"] = {"$in": ingredient_list}
+        query["ingredients.name"] = {"$all": ingredients}
     
     if tags:
-        tag_list = tags.split(',')
-        query["tags"] = {"$in": tag_list}
+        query["tags"] = {"$all": tags}
     
     if cuisine:
         query["cuisine"] = cuisine
     
-    recipes = await db.recipes.find(query).to_list(100)
+    # Get recipes
+    recipes = []
+    cursor = app.mongodb["recipes"].find(query)
+    async for document in cursor:
+        recipes.append(document)
+    
     return recipes
 
 @app.get("/recipes/{recipe_id}", response_model=Recipe)
-async def get_recipe(recipe_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(recipe_id):
-        raise HTTPException(status_code=400, detail="Invalid recipe ID format")
+async def get_recipe(recipe_id: str, current_user: dict = Depends(get_current_user)):
+    recipe = await app.mongodb["recipes"].find_one({"id": recipe_id})
     
-    recipe = await db.recipes.find_one({"_id": ObjectId(recipe_id)})
-    if recipe is None:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with ID {recipe_id} not found"
+        )
     
     return recipe
 
 @app.put("/recipes/{recipe_id}", response_model=Recipe)
-async def update_recipe(recipe_id: str, recipe: RecipeCreate, db=Depends(get_database)):
-    if not ObjectId.is_valid(recipe_id):
-        raise HTTPException(status_code=400, detail="Invalid recipe ID format")
+async def update_recipe(
+    recipe_id: str,
+    recipe_update: RecipeUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    # Check if recipe exists
+    recipe = await app.mongodb["recipes"].find_one({"id": recipe_id})
     
-    recipe_dict = recipe.dict()
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with ID {recipe_id} not found"
+        )
     
-    result = await db.recipes.update_one(
-        {"_id": ObjectId(recipe_id)},
-        {"$set": recipe_dict}
+    # Check if user owns the recipe
+    if recipe["user_id"] != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to update this recipe"
+        )
+    
+    # Update recipe
+    update_data = recipe_update.dict(exclude_unset=True)
+    update_data["updated_at"] = datetime.utcnow()
+    
+    await app.mongodb["recipes"].update_one(
+        {"id": recipe_id},
+        {"$set": update_data}
     )
     
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    # Get updated recipe
+    updated_recipe = await app.mongodb["recipes"].find_one({"id": recipe_id})
     
-    updated_recipe = await db.recipes.find_one({"_id": ObjectId(recipe_id)})
     return updated_recipe
 
-@app.delete("/recipes/{recipe_id}")
-async def delete_recipe(recipe_id: str, db=Depends(get_database)):
-    if not ObjectId.is_valid(recipe_id):
-        raise HTTPException(status_code=400, detail="Invalid recipe ID format")
+@app.delete("/recipes/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_recipe(recipe_id: str, current_user: dict = Depends(get_current_user)):
+    # Check if recipe exists
+    recipe = await app.mongodb["recipes"].find_one({"id": recipe_id})
     
-    result = await db.recipes.delete_one({"_id": ObjectId(recipe_id)})
+    if not recipe:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Recipe with ID {recipe_id} not found"
+        )
     
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+    # Check if user owns the recipe
+    if recipe["user_id"] != current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to delete this recipe"
+        )
     
-    return {"message": "Recipe deleted successfully"} 
+    # Delete recipe
+    await app.mongodb["recipes"].delete_one({"id": recipe_id})
+    
+    return None
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"} 

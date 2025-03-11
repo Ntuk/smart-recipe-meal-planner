@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useCreateShoppingList, useShoppingList, useCheckShoppingListItem, useDeleteShoppingList } from '../hooks/useShoppingList';
+import { useShoppingList } from '../hooks/useShoppingList';
 import { ShoppingListItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -43,9 +43,7 @@ const ShoppingListPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
   
-  const createShoppingListMutation = useCreateShoppingList();
-  const checkItemMutation = useCheckShoppingListItem();
-  const deleteShoppingListMutation = useDeleteShoppingList();
+  const { createShoppingList, checkItem, deleteShoppingList } = useShoppingList();
   
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [newItem, setNewItem] = useState('');
@@ -62,19 +60,17 @@ const ShoppingListPage = () => {
   // Initialize shopping list from passed ingredients
   useEffect(() => {
     if (state?.ingredients && state.ingredients.length > 0) {
-      // Format items for display while we wait for API
       const formattedItems = state.ingredients.map(ingredient => ({
         id: uuidv4(),
-        name: ingredient.charAt(0).toUpperCase() + ingredient.slice(1),
+        name: ingredient,
         checked: false,
         category: categorizeIngredient(ingredient)
       }));
       
       setItems(formattedItems);
       
-      // If we have a meal plan ID, create a shopping list
       if (state.mealPlanId) {
-        createShoppingList(state.mealPlanId, formattedItems.map(item => item.name));
+        handleCreateShoppingList(state.mealPlanId, formattedItems.map(item => item.name));
       }
     }
   }, [state]);
@@ -88,12 +84,12 @@ const ShoppingListPage = () => {
   }, [shoppingListData]);
   
   // Create a shopping list
-  const createShoppingList = async (mealPlanId: string, ingredients: string[]) => {
+  const handleCreateShoppingList = async (mealPlanId: string, ingredients: string[]) => {
     setIsLoading(true);
     setError(null);
     
     try {
-      const response = await createShoppingListMutation.mutateAsync({
+      const response = await createShoppingList({
         meal_plan_id: mealPlanId,
         name: listName,
         available_ingredients: []
@@ -136,20 +132,21 @@ const ShoppingListPage = () => {
       try {
         const itemToToggle = items.find(item => item.id === id);
         if (itemToToggle) {
-          await checkItemMutation.mutateAsync({
+          await checkItem(
             shoppingListId,
-            ingredient: itemToToggle.name,
-            checked: !itemToToggle.checked
-          });
+            itemToToggle.name,
+            !itemToToggle.checked
+          );
         }
       } catch (err) {
-        // Revert on error
+        // Revert optimistic update on error
         setItems(prev => 
           prev.map(item => 
             item.id === id ? { ...item, checked: !item.checked } : item
           )
         );
-        console.error('Failed to update item:', err);
+        setError('Failed to update item');
+        console.error(err);
       }
     }
   };

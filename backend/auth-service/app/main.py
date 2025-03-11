@@ -1,25 +1,38 @@
-from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict
-import os
-import logging
-from bson import ObjectId
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
 from datetime import datetime, timedelta
+from jose import JWTError, jwt
 from passlib.context import CryptContext
-import jwt
-from jwt.exceptions import PyJWTError
+import os
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+import uuid
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Load environment variables
+load_dotenv()
+
+# JWT Configuration
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-for-development")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# OAuth2 scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Initialize FastAPI app
-app = FastAPI(title="Authentication Service API", description="API for user authentication and profile management")
+app = FastAPI(title="Auth Service", description="Authentication service for Smart Recipe & Meal Planner")
 
-# Configure CORS
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # In production, replace with specific origins
@@ -28,104 +41,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MongoDB connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
+# Database connection
+@app.on_event("startup")
+async def startup_db_client():
+    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
+    app.mongodb = app.mongodb_client[DB_NAME]
+    
+    # Create indexes for users collection
+    await app.mongodb["users"].create_index("email", unique=True)
+    await app.mongodb["users"].create_index("username", unique=True)
 
-# JWT settings
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")  # Change in production
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-# MongoDB client
-client = None
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    app.mongodb_client.close()
 
 # Models
-class PyObjectId(ObjectId):
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
-
-    @classmethod
-    def validate(cls, v):
-        if not ObjectId.is_valid(v):
-            raise ValueError("Invalid ObjectId")
-        return ObjectId(v)
-
-    @classmethod
-    def __modify_schema__(cls, field_schema):
-        field_schema.update(type="string")
-
-class UserPreferences(BaseModel):
-    dietary_preferences: List[str] = []
-    favorite_cuisines: List[str] = []
-
-class UserCreate(BaseModel):
+class UserBase(BaseModel):
     username: str
     email: EmailStr
+
+class UserCreate(UserBase):
     password: str
 
-class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    preferences: Optional[UserPreferences] = None
-
-class User(BaseModel):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    username: str
-    email: EmailStr
-    hashed_password: str
-    preferences: Optional[UserPreferences] = None
-    created_at: Optional[str] = None
-    
-    class Config:
-        allow_population_by_field_name = True
-        arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
-
-class UserResponse(BaseModel):
+class UserInDB(UserBase):
     id: str
-    username: str
-    email: EmailStr
-    preferences: Optional[UserPreferences] = None
-    created_at: Optional[str] = None
+    hashed_password: str
+    created_at: datetime
+    updated_at: datetime
+    preferences: Optional[dict] = None
+
+class User(UserBase):
+    id: str
+    created_at: datetime
+    preferences: Optional[dict] = None
 
 class Token(BaseModel):
     access_token: str
     token_type: str
-    user: UserResponse
 
 class TokenData(BaseModel):
+    user_id: Optional[str] = None
+
+class UserUpdate(BaseModel):
     username: Optional[str] = None
-
-# Database connection
-@app.on_event("startup")
-async def startup_db_client():
-    global client
-    try:
-        client = AsyncIOMotorClient(MONGODB_URI)
-        # Validate the connection
-        await client.admin.command('ping')
-        logger.info("Connected to MongoDB")
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    global client
-    if client:
-        client.close()
-        logger.info("MongoDB connection closed")
-
-# Dependency to get database
-async def get_database():
-    return client[DATABASE_NAME]
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    preferences: Optional[dict] = None
 
 # Helper functions
 def verify_password(plain_password, hashed_password):
@@ -134,13 +95,18 @@ def verify_password(plain_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-async def get_user(db, username: str):
-    user = await db.users.find_one({"username": username})
+async def get_user(db, user_id: str):
+    user = await db["users"].find_one({"id": user_id})
     if user:
-        return User(**user)
+        return UserInDB(**user)
 
-async def authenticate_user(db, username: str, password: str):
-    user = await get_user(db, username)
+async def get_user_by_email(db, email: str):
+    user = await db["users"].find_one({"email": email})
+    if user:
+        return UserInDB(**user)
+
+async def authenticate_user(db, email: str, password: str):
+    user = await get_user_by_email(db, email)
     if not user:
         return False
     if not verify_password(password, user.hashed_password):
@@ -152,12 +118,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get_database)):
+async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -165,151 +131,128 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db = Depends(get
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        user_id: str = payload.get("sub")
+        if user_id is None:
             raise credentials_exception
-        token_data = TokenData(username=username)
-    except PyJWTError:
+        token_data = TokenData(user_id=user_id)
+    except JWTError:
         raise credentials_exception
-    user = await get_user(db, username=token_data.username)
+    user = await get_user(app.mongodb, token_data.user_id)
     if user is None:
         raise credentials_exception
     return user
 
 # Routes
-@app.get("/")
-async def root():
-    return {"message": "Authentication Service API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
-
 @app.post("/register", response_model=Token)
-async def register_user(user_data: UserCreate, db = Depends(get_database)):
-    # Check if username already exists
-    existing_user = await db.users.find_one({"username": user_data.username})
+async def register_user(user: UserCreate):
+    # Check if user already exists
+    existing_user = await app.mongodb["users"].find_one({"email": user.email})
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already registered"
-        )
-    
-    # Check if email already exists
-    existing_email = await db.users.find_one({"email": user_data.email})
-    if existing_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
     
-    # Create new user
-    hashed_password = get_password_hash(user_data.password)
-    user_dict = {
-        "username": user_data.username,
-        "email": user_data.email,
-        "hashed_password": hashed_password,
-        "preferences": {"dietary_preferences": [], "favorite_cuisines": []},
-        "created_at": datetime.now().isoformat(),
-    }
+    existing_username = await app.mongodb["users"].find_one({"username": user.username})
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
     
-    result = await db.users.insert_one(user_dict)
+    # Create new user
+    user_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    
+    user_in_db = UserInDB(
+        id=user_id,
+        username=user.username,
+        email=user.email,
+        hashed_password=get_password_hash(user.password),
+        created_at=now,
+        updated_at=now,
+        preferences={}
+    )
+    
+    await app.mongodb["users"].insert_one(user_in_db.dict())
     
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user_data.username}, expires_delta=access_token_expires
+        data={"sub": user_id}, expires_delta=access_token_expires
     )
     
-    # Get created user
-    created_user = await db.users.find_one({"_id": result.inserted_id})
-    
-    # Prepare response
-    user_response = {
-        "id": str(created_user["_id"]),
-        "username": created_user["username"],
-        "email": created_user["email"],
-        "preferences": created_user["preferences"],
-        "created_at": created_user["created_at"],
-    }
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user_response
-    }
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/login", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db = Depends(get_database)):
-    user = await authenticate_user(db, form_data.username, form_data.password)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await authenticate_user(app.mongodb, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
+            detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.id}, expires_delta=access_token_expires
     )
     
-    # Prepare response
-    user_response = {
-        "id": str(user.id),
-        "username": user.username,
-        "email": user.email,
-        "preferences": user.preferences,
-        "created_at": user.created_at,
-    }
-    
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": user_response
-    }
+    return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/profile", response_model=UserResponse)
-async def get_user_profile(current_user: User = Depends(get_current_user)):
-    return {
-        "id": str(current_user.id),
-        "username": current_user.username,
-        "email": current_user.email,
-        "preferences": current_user.preferences,
-        "created_at": current_user.created_at,
-    }
+@app.get("/profile", response_model=User)
+async def read_users_me(current_user: UserInDB = Depends(get_current_user)):
+    return User(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        created_at=current_user.created_at,
+        preferences=current_user.preferences
+    )
 
-@app.put("/profile", response_model=UserResponse)
-async def update_user_profile(user_update: UserUpdate, current_user: User = Depends(get_current_user), db = Depends(get_database)):
-    update_data = {}
+@app.put("/profile", response_model=User)
+async def update_user(
+    user_update: UserUpdate,
+    current_user: UserInDB = Depends(get_current_user)
+):
+    update_data = user_update.dict(exclude_unset=True)
     
-    if user_update.username is not None:
-        # Check if username already exists
-        if user_update.username != current_user.username:
-            existing_user = await db.users.find_one({"username": user_update.username})
-            if existing_user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Username already taken"
-                )
-        update_data["username"] = user_update.username
+    if "password" in update_data:
+        update_data["hashed_password"] = get_password_hash(update_data.pop("password"))
     
-    if user_update.preferences is not None:
-        update_data["preferences"] = user_update.preferences.dict()
+    update_data["updated_at"] = datetime.utcnow()
     
-    if update_data:
-        await db.users.update_one(
-            {"_id": current_user.id},
-            {"$set": update_data}
-        )
+    await app.mongodb["users"].update_one(
+        {"id": current_user.id},
+        {"$set": update_data}
+    )
     
-    # Get updated user
-    updated_user = await db.users.find_one({"_id": current_user.id})
+    updated_user = await get_user(app.mongodb, current_user.id)
     
-    return {
-        "id": str(updated_user["_id"]),
-        "username": updated_user["username"],
-        "email": updated_user["email"],
-        "preferences": updated_user["preferences"],
-        "created_at": updated_user["created_at"],
-    } 
+    return User(
+        id=updated_user.id,
+        username=updated_user.username,
+        email=updated_user.email,
+        created_at=updated_user.created_at,
+        preferences=updated_user.preferences
+    )
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# For testing purposes
+@app.get("/users", response_model=list[User])
+async def get_all_users():
+    users = []
+    cursor = app.mongodb["users"].find({})
+    async for document in cursor:
+        users.append(User(
+            id=document["id"],
+            username=document["username"],
+            email=document["email"],
+            created_at=document["created_at"],
+            preferences=document.get("preferences", {})
+        ))
+    return users 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { useCreateMealPlan } from '../hooks/useMealPlanning';
+import { useMealPlanning } from '../hooks/useMealPlanning';
 import { MealPlan, Recipe } from '../types';
 
 // Remove mock recipe data
@@ -12,7 +12,7 @@ interface LocationState {
 const MealPlanPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
-  const createMealPlanMutation = useCreateMealPlan();
+  const { createMealPlan } = useMealPlanning();
   
   const [availableIngredients, setAvailableIngredients] = useState<string[]>(state?.ingredients || []);
   const [dietaryPreferences, setDietaryPreferences] = useState<string[]>([]);
@@ -73,7 +73,7 @@ const MealPlanPage = () => {
       };
       
       // Call the API to create a meal plan
-      const response = await createMealPlanMutation.mutateAsync(mealPlanData);
+      const response = await createMealPlan(mealPlanData);
       
       // Set the meal plan data
       setMealPlan(response);

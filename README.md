@@ -1,293 +1,124 @@
 # Smart Recipe & Meal Planner
 
-A microservices-based distributed application that suggests meal plans based on available ingredients, dietary preferences, and user history. This project was developed as part of the Microservices and Containers course (KM00DT91-3005).
+A microservice-based application for managing recipes, planning meals, and generating shopping lists.
 
-## Project Overview
+## Features
 
-The Smart Recipe & Meal Planner is designed to solve a common problem: "What can I cook with the ingredients I have?" By leveraging microservices architecture and OCR technology, the system can:
+- User authentication and profile management
+- Recipe database with search and filtering
+- Ingredient scanning from images using OCR
+- Meal planning with calendar integration
+- Shopping list generation based on meal plans
 
-1. Scan and identify ingredients from images (e.g., photos of your refrigerator contents)
-2. Match available ingredients with suitable recipes
-3. Generate personalized meal plans based on dietary preferences
-4. Create shopping lists for missing ingredients
+## Architecture
 
-## Domain-Driven Design
+The application is built using a microservice architecture with the following services:
 
-Following Domain-Driven Design (DDD) principles, we identified the following bounded contexts and their corresponding microservices:
-
-| Bounded Context | Microservice | Core Responsibilities |
-|-----------------|--------------|----------------------|
-| User Management | Authentication Service | User registration, login, profile management |
-| Ingredient Management | Ingredient Scanner Service | Extracts ingredients from images using OCR, manages user's available ingredients |
-| Recipe Catalog | Recipe Service | Stores and retrieves recipes, provides search and filtering capabilities |
-| Meal Planning | Meal Planning Service | Generates meal plans based on available ingredients and user preferences |
-| Shopping | Shopping List Service | Creates and manages shopping lists for missing ingredients |
-
-## Microservices Architecture
-
-![Smart Recipe & Meal Planner Architecture](frontend/docs/images/architecture.png)
-
-### Data Flow & Communication
-
-The system implements a hybrid communication model:
-
-#### Synchronous Communication (REST APIs)
-
-- **Frontend → Auth Service**: User registration, login, profile management
-- **Frontend → Recipe Service**: Fetch recipes, filter by ingredients/tags
-- **Frontend → Ingredient Scanner Service**: Upload images for OCR processing
-- **Frontend → Meal Planning Service**: Generate meal plans based on preferences
-- **Frontend → Shopping List Service**: Create and manage shopping lists
-
-#### Asynchronous Communication (Event-Driven)
-
-The system uses RabbitMQ/Kafka for event-driven communication between services:
-
-- **Ingredient Scanner Service → Recipe Service**: When new ingredients are detected, the Recipe Service is notified to update available recipes
-- **Meal Planning Service → Shopping List Service**: When a meal plan is created, the Shopping List Service generates a list of missing ingredients
-- **Services → Frontend**: Real-time updates are pushed to the frontend when data changes
+- **Auth Service**: Handles user authentication and profile management
+- **Recipe Service**: Manages recipes and provides search functionality
+- **Ingredient Scanner Service**: Extracts ingredients from images using OCR
+- **Meal Planning Service**: Creates and manages meal plans
+- **Shopping List Service**: Generates shopping lists based on meal plans
 
 ## Tech Stack
 
 ### Frontend
-- **Framework**: React with TypeScript
-- **UI**: Tailwind CSS
-- **Build Tool**: Vite
-- **State Management**: React Query for server state, Context API for auth state
+- React
+- TypeScript
+- Tailwind CSS
+- Axios for API communication
 
 ### Backend
-- **API Framework**: FastAPI (Python)
-- **Database**: MongoDB (document-based NoSQL)
-- **Authentication**: JWT-based authentication
-- **OCR**: Tesseract OCR for ingredient detection
-- **Messaging**: RabbitMQ/Kafka for event-driven architecture
-- **API Gateway**: Nginx for routing and load balancing
+- FastAPI (Python)
+- MongoDB for data storage
+- JWT for authentication
+- Docker for containerization
 
-### Infrastructure
-- **Containerization**: Docker
-- **Orchestration**: Docker Compose
-
-## Database Schema
-
-Each microservice maintains its own data store in MongoDB:
-
-### User Collection
-```json
-{
-  "_id": "ObjectId(567890)",
-  "username": "johndoe",
-  "email": "john@example.com",
-  "hashed_password": "hashed_password_string",
-  "preferences": {
-    "dietary_preferences": ["Vegetarian", "Low-Carb"],
-    "favorite_cuisines": ["Italian", "Mexican"]
-  },
-  "created_at": "2025-03-10T12:00:00Z"
-}
-```
-
-### Recipe Service Collection
-```json
-{
-  "_id": "ObjectId(123456)",
-  "title": "Spaghetti Carbonara",
-  "description": "A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.",
-  "ingredients": ["Spaghetti", "Eggs", "Pancetta", "Parmesan cheese", "Black pepper", "Salt"],
-  "instructions": ["Cook pasta...", "Mix eggs and cheese...", "Combine and serve..."],
-  "prep_time_minutes": 10,
-  "cook_time_minutes": 15,
-  "servings": 4,
-  "tags": ["Italian", "Pasta", "Quick"],
-  "cuisine": "Italian",
-  "difficulty": "Easy",
-  "nutritional_info": {
-    "calories": 450,
-    "protein": 20,
-    "carbs": 50,
-    "fat": 18
-  },
-  "created_at": "2025-03-10T12:00:00Z"
-}
-```
-
-### Ingredient Scanner Collection
-```json
-{
-  "_id": "ObjectId(789012)",
-  "user_id": "user123",
-  "ingredients": ["Tomatoes", "Onions", "Garlic", "Olive Oil"],
-  "image_url": "https://storage.example.com/images/scan123.jpg",
-  "scanned_at": "2025-03-15T14:30:00Z"
-}
-```
-
-### Meal Plan Collection
-```json
-{
-  "_id": "ObjectId(345678)",
-  "user_id": "user123",
-  "name": "Weekly Plan",
-  "recipes": ["recipe_id_1", "recipe_id_2", "recipe_id_3"],
-  "days": 7,
-  "dietary_preferences": ["Vegetarian", "Low-Carb"],
-  "created_at": "2025-03-16T09:15:00Z"
-}
-```
-
-### Shopping List Collection
-```json
-{
-  "_id": "ObjectId(901234)",
-  "user_id": "user123",
-  "meal_plan_id": "meal_plan_id_1",
-  "name": "Grocery List",
-  "items": [
-    {"ingredient": "Chicken", "quantity": "500g", "checked": false},
-    {"ingredient": "Broccoli", "quantity": "1 head", "checked": true}
-  ],
-  "created_at": "2025-03-16T10:30:00Z"
-}
-```
-
-## API Endpoints
-
-### Authentication Service
-- `POST /register` - Register a new user
-- `POST /login` - Login and get access token
-- `GET /profile` - Get user profile
-- `PUT /profile` - Update user profile
-
-### Recipe Service
-- `GET /recipes` - List all recipes with optional filtering
-- `GET /recipes/{id}` - Get a specific recipe
-- `POST /recipes` - Create a new recipe
-- `PUT /recipes/{id}` - Update a recipe
-- `DELETE /recipes/{id}` - Delete a recipe
-
-### Ingredient Scanner Service
-- `POST /scan` - Upload an image for ingredient detection
-- `POST /manual-input` - Manually input ingredients
-
-### Meal Planning Service
-- `POST /meal-plans` - Create a meal plan based on ingredients and preferences
-- `GET /meal-plans` - List all meal plans
-- `GET /meal-plans/{id}` - Get a specific meal plan
-- `DELETE /meal-plans/{id}` - Delete a meal plan
-
-### Shopping List Service
-- `POST /shopping-lists` - Create a shopping list from a meal plan
-- `GET /shopping-lists` - List all shopping lists
-- `GET /shopping-lists/{id}` - Get a specific shopping list
-- `PUT /shopping-lists/{id}/items/{ingredient}/check` - Check/uncheck an item
-- `DELETE /shopping-lists/{id}` - Delete a shopping list
-
-## Setup Instructions
+## Getting Started
 
 ### Prerequisites
 
+- Docker and Docker Compose
 - Node.js (v16+)
 - Python (v3.9+)
-- Docker and Docker Compose
 
-### Installation
+### Development Setup
 
-1. Clone the repository
-```bash
-git clone https://github.com/yourusername/smart-recipe-meal-planner.git
-cd smart-recipe-meal-planner
-```
+1. Clone the repository:
+   ```
+   git clone https://github.com/yourusername/smart-recipe-meal-planner.git
+   cd smart-recipe-meal-planner
+   ```
 
-2. Start the services using Docker Compose
-```bash
-docker-compose up
-```
+2. Start the development environment:
+   ```
+   chmod +x start-dev.sh
+   ./start-dev.sh
+   ```
 
-3. Access the application
-- Frontend: http://localhost:3000
-- API Documentation: http://localhost:8000/docs
+   This will start:
+   - MongoDB on port 27017
+   - Auth Service on port 8000
+   - Recipe Service on port 8001
+   - Ingredient Scanner Service on port 8002
+   - Meal Planning Service on port 8003
+   - Shopping List Service on port 8004
+   - Frontend on port 5173
 
-## Development
+3. Access the application at http://localhost:5173
 
-### Frontend
+### Production Deployment
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+1. Build and start all services using Docker Compose:
+   ```
+   docker-compose up -d
+   ```
 
-### Backend Services
+2. Access the application at http://localhost:3000
 
-Each service can be run independently for development:
+## API Documentation
 
-```bash
-cd backend/recipe-service
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8001
-```
+Each service provides Swagger documentation at the `/docs` endpoint:
+
+- Auth Service: http://localhost:8000/docs
+- Recipe Service: http://localhost:8001/docs
+- Ingredient Scanner Service: http://localhost:8002/docs
+- Meal Planning Service: http://localhost:8003/docs
+- Shopping List Service: http://localhost:8004/docs
 
 ## Project Structure
 
 ```
 smart-recipe-meal-planner/
-├── frontend/                 # React frontend application
-│   ├── src/                  # React components and code
-│   │   ├── components/       # Reusable UI components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API service clients
-│   │   ├── hooks/            # Custom React hooks
-│   │   └── types/            # TypeScript type definitions
-│   ├── docs/                 # Architecture documentation
-│   └── public/               # Static assets
-├── backend/                  # Backend services
-│   ├── recipe-service/       # Recipe database service
-│   │   ├── app/              # Application code
-│   │   ├── Dockerfile        # Container configuration
-│   │   └── requirements.txt  # Python dependencies
-│   ├── ingredient-scanner-service/ # OCR ingredient detection
-│   ├── meal-planning-service/     # Meal planning engine
-│   └── shopping-list-service/     # Shopping list generator
-└── docker-compose.yml        # Docker compose configuration
+├── frontend/                # React frontend application
+│   ├── src/
+│   │   ├── components/      # Reusable UI components
+│   │   ├── hooks/           # Custom React hooks
+│   │   ├── pages/           # Page components
+│   │   ├── services/        # API services
+│   │   └── ...
+│   ├── Dockerfile           # Frontend Docker configuration
+│   └── ...
+├── backend/
+│   ├── auth-service/        # Authentication service
+│   ├── recipe-service/      # Recipe management service
+│   ├── ingredient-scanner-service/ # Ingredient scanning service
+│   ├── meal-planning-service/ # Meal planning service
+│   ├── shopping-list-service/ # Shopping list service
+│   └── ...
+├── docker-compose.yml       # Docker Compose configuration
+├── start-dev.sh             # Development startup script
+└── README.md                # Project documentation
 ```
 
-## Testing Strategy
+## Contributing
 
-The application includes both unit and integration tests:
-
-- **Unit Tests**: Each microservice has its own unit tests for business logic
-- **Integration Tests**: Tests for API endpoints and service interactions
-- **End-to-End Tests**: Tests for complete user workflows
-
-## Security Considerations
-
-- **Authentication**: JWT-based authentication for API access
-- **Authorization**: Role-based access control for different operations
-- **Password Security**: Passwords are hashed using bcrypt
-- **Rate Limiting**: Prevents excessive API requests
-- **CORS**: Proper Cross-Origin Resource Sharing configuration
-- **Data Validation**: Input validation on all API endpoints
-
-## Future Enhancements
-
-- **User Authentication**: Add user accounts and profiles
-- **Recipe Recommendations**: Implement ML-based recipe recommendations
-- **Nutritional Analysis**: Enhanced nutritional information and dietary tracking
-- **Mobile App**: Develop a mobile application for on-the-go meal planning
-- **GraphQL API**: Implement a GraphQL API for more flexible data fetching
-- **Monitoring**: Add Prometheus and Grafana for system monitoring
-
-## Deployment
-
-The application is containerized using Docker and can be deployed to:
-
-- Local development environment
-- Cloud providers (AWS, GCP, Azure)
-- Kubernetes cluster for production
-
-## Contributors
-
-- Your Name - Developer
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/your-feature-name`
+3. Commit your changes: `git commit -m 'Add some feature'`
+4. Push to the branch: `git push origin feature/your-feature-name`
+5. Open a pull request
 
 ## License
 
-MIT 
+This project is licensed under the MIT License - see the LICENSE file for details. 
