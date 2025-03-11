@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Stop any existing MongoDB container
+echo "Stopping any existing MongoDB container..."
+docker stop mongodb 2>/dev/null || true
+
 # Start MongoDB
 echo "Starting MongoDB..."
 docker compose up -d mongodb
