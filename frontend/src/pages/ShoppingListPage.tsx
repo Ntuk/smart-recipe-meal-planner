@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useShoppingList } from '../hooks/useShoppingList';
 import { ShoppingListItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuthContext } from '../context/AuthContext';
 
 interface LocationState {
   ingredients?: string[];
@@ -42,6 +43,7 @@ const categorizeIngredient = (ingredient: string): string => {
 const ShoppingListPage = () => {
   const location = useLocation();
   const state = location.state as LocationState;
+  const { isAuthenticated } = useAuthContext();
   
   const { createShoppingList, checkItem, deleteShoppingList } = useShoppingList();
   

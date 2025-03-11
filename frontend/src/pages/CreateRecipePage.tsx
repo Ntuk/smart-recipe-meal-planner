@@ -33,14 +33,6 @@ const CreateRecipePage: React.FC = () => {
     }
   }, [location.state]);
   
-  // Redirect if not authenticated
-  useEffect(() => {
-    if (!isAuthenticated) {
-      // Instead of redirecting, we'll show a message
-      setError('You must be logged in to create a recipe. Please log in first.');
-    }
-  }, [isAuthenticated]);
-  
   const handleAddIngredient = () => {
     if (!newIngredient.name.trim()) return;
     
@@ -61,6 +53,11 @@ const CreateRecipePage: React.FC = () => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!isAuthenticated) {
+      setError('You must be logged in to create a recipe. Please log in first.');
+      return;
+    }
     
     if (!title.trim()) {
       setError('Recipe title is required');

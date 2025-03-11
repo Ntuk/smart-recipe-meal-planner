@@ -60,11 +60,6 @@ const ScanPage: React.FC = () => {
   };
 
   const handleManualInput = async () => {
-    if (!isAuthenticated) {
-      setError('You must be logged in to process ingredients');
-      return;
-    }
-    
     if (!manualText.trim()) {
       setError('Please enter some text');
       return;
@@ -74,12 +69,16 @@ const ScanPage: React.FC = () => {
     setError(null);
     
     try {
-      const response = await ingredientScannerApiService.manualInput(manualText);
-      setIngredients(response.ingredients.map(item => item.name));
+      const lines = manualText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0);
+      
+      setIngredients(lines);
+      setLoading(false);
     } catch (err) {
       console.error('Error processing text:', err);
       setError('Failed to process text. Please try again.');
-    } finally {
       setLoading(false);
     }
   };
@@ -108,11 +107,6 @@ const ScanPage: React.FC = () => {
   };
 
   const handleAddToShoppingList = async () => {
-    if (!isAuthenticated) {
-      setError('You must be logged in to add to shopping list. Please log in first.');
-      return;
-    }
-
     if (!ingredients || ingredients.length === 0) {
       setError('No ingredients detected. Please scan or enter ingredients first.');
       return;
