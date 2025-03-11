@@ -7,6 +7,7 @@ import { useAuthContext } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import SavedLists from '../components/SavedLists';
 import { useTranslation } from 'react-i18next';
+import { useIngredientTranslation } from '../hooks/useIngredientTranslation';
 
 interface LocationState {
   ingredients?: string[];
@@ -54,6 +55,7 @@ const ShoppingListPage = () => {
   const state = location.state as LocationState;
   const { isAuthenticated } = useAuthContext();
   const { t } = useTranslation();
+  const { translateIngredientName } = useIngredientTranslation();
   
   const { createShoppingList, checkItem, deleteShoppingList } = useShoppingList();
   
@@ -356,7 +358,7 @@ const ShoppingListPage = () => {
                 <div>
                   {sortedCategories.map(category => (
                     <div key={category} className="mb-6">
-                      <h3 className="text-lg font-medium text-gray-900 mb-3">{category}</h3>
+                      <h3 className="text-lg font-medium text-gray-900 mb-3">{t(`categories.${category.toLowerCase().replace(' & ', '')}`)}</h3>
                       <ul className="divide-y divide-gray-200 border-t border-b border-gray-200">
                         {itemsByCategory[category].map(item => (
                           <li key={item.id} className="py-4 flex items-center justify-between">
@@ -372,7 +374,7 @@ const ShoppingListPage = () => {
                                   item.checked ? 'text-gray-400 line-through' : 'text-gray-700'
                                 }`}
                               >
-                                {item.name}
+                                {translateIngredientName(item.name)}
                               </span>
                             </div>
                             <button

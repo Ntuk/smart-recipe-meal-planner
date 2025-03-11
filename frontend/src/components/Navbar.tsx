@@ -259,6 +259,73 @@ const Navbar = () => {
             {t('navigation.shoppingLists')}
           </Link>
         </div>
+        
+        <div className="pt-4 pb-3 border-t border-gray-200">
+          <div className="flex items-center px-4">
+            <div className="flex-shrink-0">
+              {isAuthenticated ? (
+                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-800 font-semibold">
+                  {user?.username.charAt(0).toUpperCase()}
+                </div>
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500">
+                  <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+              )}
+            </div>
+            <div className="ml-3">
+              {isAuthenticated ? (
+                <div className="text-base font-medium text-gray-800">{user?.username}</div>
+              ) : (
+                <div className="text-base font-medium text-gray-800">{t('common.guest')}</div>
+              )}
+            </div>
+            <div className="ml-auto">
+              <LanguageSwitcher />
+            </div>
+          </div>
+          <div className="mt-3 space-y-1">
+            {isAuthenticated ? (
+              <>
+                <Link
+                  to="/profile"
+                  className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {t('common.profile')}
+                </Link>
+                <button
+                  className="block w-full text-left px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  onClick={() => {
+                    logout();
+                    setIsMenuOpen(false);
+                  }}
+                >
+                  {t('common.logout')}
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {t('common.login')}
+                </Link>
+                <Link
+                  to="/register"
+                  className="block px-4 py-2 text-base font-medium text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {t('common.register')}
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </nav>
   );

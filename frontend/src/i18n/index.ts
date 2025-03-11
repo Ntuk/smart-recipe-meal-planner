@@ -5,6 +5,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 // Import translations
 import enTranslation from './locales/en.json';
 import fiTranslation from './locales/fi.json';
+import svTranslation from './locales/sv.json';
 
 // Configure i18next
 i18n
@@ -20,6 +21,9 @@ i18n
       },
       fi: {
         translation: fiTranslation
+      },
+      sv: {
+        translation: svTranslation
       }
     },
     fallbackLng: 'en',

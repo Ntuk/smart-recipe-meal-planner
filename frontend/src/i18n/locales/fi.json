@@ -20,7 +20,8 @@
     "register": "Rekisteröidy",
     "profile": "Profiili",
     "show": "Näytä",
-    "hide": "Piilota"
+    "hide": "Piilota",
+    "guest": "Vieras"
   },
   "navigation": {
     "home": "Etusivu",
@@ -79,7 +80,15 @@
     "noRecipesFound": "Reseptejä ei löytynyt",
     "description": "Etsi reseptejä ainesten, keittiön tai ruokavalion perusteella",
     "viewRecipe": "Näytä Resepti",
-    "adjustSearchFilters": "Kokeile muuttaa hakua tai suodattimia löytääksesi etsimäsi."
+    "adjustSearchFilters": "Kokeile muuttaa hakua tai suodattimia löytääksesi etsimäsi.",
+    "createRecipeDescription": "Täytä tiedot luodaksesi uuden reseptin",
+    "ingredientName": "Aineksen nimi",
+    "instructionsPlaceholder": "Syötä vaiheittaiset ohjeet",
+    "minutes": "Minuuttia",
+    "tagsPlaceholder": "Pilkulla erotellut tagit (esim. Italialainen, Pasta, Nopea)",
+    "titleRequired": "Otsikko vaaditaan",
+    "ingredientsRequired": "Vähintään yksi ainesosa vaaditaan",
+    "instructionsRequired": "Ohjeet vaaditaan"
   },
   "scan": {
     "title": "Ainesten Skanneri",

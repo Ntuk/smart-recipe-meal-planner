@@ -20,7 +20,8 @@
     "register": "Register",
     "profile": "Profile",
     "show": "Show",
-    "hide": "Hide"
+    "hide": "Hide",
+    "guest": "Guest"
   },
   "navigation": {
     "home": "Home",
@@ -79,7 +80,15 @@
     "noRecipesFound": "No recipes found",
     "description": "Find recipes based on ingredients, cuisine, or dietary preferences",
     "viewRecipe": "View Recipe",
-    "adjustSearchFilters": "Try adjusting your search or filters to find what you're looking for."
+    "adjustSearchFilters": "Try adjusting your search or filters to find what you're looking for.",
+    "createRecipeDescription": "Fill in the details to create a new recipe",
+    "ingredientName": "Ingredient name",
+    "instructionsPlaceholder": "Enter step-by-step instructions",
+    "minutes": "Minutes",
+    "tagsPlaceholder": "Comma-separated tags (e.g. Italian, Pasta, Quick)",
+    "titleRequired": "Title is required",
+    "ingredientsRequired": "At least one ingredient is required",
+    "instructionsRequired": "Instructions are required"
   },
   "scan": {
     "title": "Ingredient Scanner",
