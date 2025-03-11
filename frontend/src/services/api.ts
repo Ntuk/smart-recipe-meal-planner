@@ -169,7 +169,7 @@ export const ingredientScannerApiService = {
     const formData = new FormData();
     formData.append('file', file);
     
-    const response = await ingredientScannerApi.post('/ingredients/scan', formData, {
+    const response = await ingredientScannerApi.post('/scan', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -180,7 +180,7 @@ export const ingredientScannerApiService = {
   
   // Manual input of ingredients
   manualInput: async (text: string) => {
-    const response = await ingredientScannerApi.post('/ingredients/manual-input', { text });
+    const response = await ingredientScannerApi.post('/manual-input', { text });
     return response.data;
   },
 };
