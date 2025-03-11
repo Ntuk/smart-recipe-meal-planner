@@ -9,8 +9,8 @@ echo "Starting MongoDB..."
 docker start mongodb || docker compose up -d mongodb
 sleep 5  # Wait for MongoDB to start
 
-# Define the path to uvicorn
-UVICORN_PATH="/Users/nicotukiainen/.pyenv/versions/3.10.3/bin/uvicorn"
+# Define the path to /Users/nicotukiainen/.pyenv/versions/3.10.3/bin//Users/nicotukiainen/.pyenv/versions/3.10.3/bin/uvicorn
+UVICORN_PATH="/Users/nicotukiainen/.pyenv/versions/3.10.3/bin//Users/nicotukiainen/.pyenv/versions/3.10.3/bin//Users/nicotukiainen/.pyenv/versions/3.10.3/bin/uvicorn"
 
 # Start Auth Service
 echo "Starting Auth Service..."
