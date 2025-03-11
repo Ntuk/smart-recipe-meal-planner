@@ -69,12 +69,17 @@ const ScanPage: React.FC = () => {
     setError(null);
     
     try {
-      const lines = manualText
+      // Split by newlines first, then by commas, and flatten the array
+      const ingredients = manualText
         .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
+        .flatMap(line => 
+          line.split(',')
+            .map(item => item.trim())
+            .filter(item => item.length > 0)
+        );
       
-      setIngredients(lines);
+      console.log('Processed ingredients:', ingredients);
+      setIngredients(ingredients);
       setLoading(false);
     } catch (err) {
       console.error('Error processing text:', err);

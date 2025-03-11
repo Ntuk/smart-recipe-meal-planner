@@ -4,10 +4,18 @@ import { useShoppingList } from '../hooks/useShoppingList';
 import { ShoppingListItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuthContext } from '../context/AuthContext';
+import { toast } from 'react-hot-toast';
+import SavedLists from '../components/SavedLists';
 
 interface LocationState {
   ingredients?: string[];
   mealPlanId?: string;
+  savedList?: {
+    id: string;
+    name: string;
+    items: ShoppingItem[];
+    created_at: string;
+  };
 }
 
 interface ShoppingItem {
@@ -59,15 +67,25 @@ const ShoppingListPage = () => {
     enabled: !!shoppingListId
   });
   
-  // Initialize shopping list from passed ingredients
+  // Initialize shopping list from passed ingredients or saved list
   useEffect(() => {
-    if (state?.ingredients && state.ingredients.length > 0) {
+    console.log('State from location:', state);
+    
+    if (state?.savedList) {
+      // Load from saved list
+      setItems(state.savedList.items);
+      setListName(state.savedList.name);
+    } else if (state?.ingredients && state.ingredients.length > 0) {
+      console.log('Ingredients from ScanPage:', state.ingredients);
+      
       const formattedItems = state.ingredients.map(ingredient => ({
         id: uuidv4(),
         name: ingredient,
         checked: false,
         category: categorizeIngredient(ingredient)
       }));
+      
+      console.log('Formatted items:', formattedItems);
       
       setItems(formattedItems);
       
@@ -199,6 +217,52 @@ const ShoppingListPage = () => {
   // Sort categories for display
   const sortedCategories = Object.keys(itemsByCategory).sort();
   
+  // Save shopping list
+  const saveShoppingList = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      if (isAuthenticated) {
+        // If user is authenticated, save to backend
+        const shoppingListData = {
+          name: listName,
+          items: items.map(item => ({
+            name: item.name,
+            quantity: null,
+            unit: null,
+            checked: item.checked
+          }))
+        };
+        
+        const response = await createShoppingList(shoppingListData);
+        if (response) {
+          setShoppingListId(response.id);
+          toast.success('Shopping list saved successfully!');
+        }
+      } else {
+        // If user is not authenticated, save to localStorage
+        const savedLists = JSON.parse(localStorage.getItem('shoppingLists') || '[]');
+        const newList = {
+          id: uuidv4(),
+          name: listName,
+          items: items,
+          created_at: new Date().toISOString()
+        };
+        
+        savedLists.push(newList);
+        localStorage.setItem('shoppingLists', JSON.stringify(savedLists));
+        toast.success('Shopping list saved locally!');
+      }
+    } catch (err) {
+      console.error('Error saving shopping list:', err);
+      setError('Failed to save shopping list');
+      toast.error('Failed to save shopping list');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
@@ -228,6 +292,8 @@ const ShoppingListPage = () => {
             </div>
             
             <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
+              {!isAuthenticated && <SavedLists />}
+              
               <div className="mb-6">
                 <label htmlFor="list-name" className="block text-sm font-medium text-gray-700">
                   List Name
@@ -334,13 +400,23 @@ const ShoppingListPage = () => {
                     >
                       Clear Checked Items
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => window.print()}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      Print List
-                    </button>
+                    <div className="space-x-2">
+                      <button
+                        type="button"
+                        onClick={saveShoppingList}
+                        disabled={isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                      >
+                        {isLoading ? 'Saving...' : 'Save List'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => window.print()}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Print List
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

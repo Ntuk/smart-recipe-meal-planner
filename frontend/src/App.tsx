@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from 'react-hot-toast';
 import './App.css';
 
 // Context
@@ -48,6 +49,7 @@ function App() {
               </Routes>
             </main>
             <Footer />
+            <Toaster position="bottom-right" />
           </div>
         </Router>
       </AuthProvider>
