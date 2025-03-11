@@ -57,7 +57,10 @@
     "registerSuccess": "Rekisteröityminen onnistui",
     "logoutSuccess": "Uloskirjautuminen onnistui",
     "loginRequired": "Sinun on kirjauduttava sisään käyttääksesi tätä ominaisuutta",
-    "rememberMe": "Muista minut"
+    "rememberMe": "Muista minut",
+    "confirmPassword": "Vahvista salasana",
+    "passwordsDoNotMatch": "Salasanat eivät täsmää",
+    "or": "Tai"
   },
   "recipes": {
     "title": "Reseptit",
@@ -73,7 +76,10 @@
     "addIngredient": "Lisää Aines",
     "quantity": "Määrä",
     "unit": "Yksikkö",
-    "noRecipesFound": "Reseptejä ei löytynyt"
+    "noRecipesFound": "Reseptejä ei löytynyt",
+    "description": "Etsi reseptejä ainesten, keittiön tai ruokavalion perusteella",
+    "viewRecipe": "Näytä Resepti",
+    "adjustSearchFilters": "Kokeile muuttaa hakua tai suodattimia löytääksesi etsimäsi."
   },
   "scan": {
     "title": "Ainesten Skanneri",

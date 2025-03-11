@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -58,6 +59,7 @@ const RecipesPage = () => {
   const [selectedCuisine, setSelectedCuisine] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const { t } = useTranslation();
 
   // Get unique cuisines, difficulties, and tags from recipes
   const cuisines = [...new Set(MOCK_RECIPES.map(recipe => recipe.cuisine))];
@@ -92,16 +94,16 @@ const RecipesPage = () => {
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="px-4 py-5 sm:px-6">
-              <h1 className="text-2xl font-bold text-gray-900">Browse Recipes</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t('recipes.title')}</h1>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                Find recipes based on ingredients, cuisine, or dietary preferences
+                {t('recipes.description', 'Find recipes based on ingredients, cuisine, or dietary preferences')}
               </p>
             </div>
             <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-4">
                 <div className="sm:col-span-4">
                   <label htmlFor="search" className="block text-sm font-medium text-gray-700">
-                    Search recipes or ingredients
+                    {t('common.search')}
                   </label>
                   <div className="mt-1">
                     <input
@@ -118,7 +120,7 @@ const RecipesPage = () => {
 
                 <div>
                   <label htmlFor="cuisine" className="block text-sm font-medium text-gray-700">
-                    Cuisine
+                    {t('recipes.cuisine')}
                   </label>
                   <select
                     id="cuisine"
@@ -127,7 +129,7 @@ const RecipesPage = () => {
                     value={selectedCuisine}
                     onChange={(e) => setSelectedCuisine(e.target.value)}
                   >
-                    <option value="">All Cuisines</option>
+                    <option value="">{t('All Cuisines', 'All Cuisines')}</option>
                     {cuisines.map((cuisine) => (
                       <option key={cuisine} value={cuisine}>
                         {cuisine}
@@ -138,7 +140,7 @@ const RecipesPage = () => {
 
                 <div>
                   <label htmlFor="difficulty" className="block text-sm font-medium text-gray-700">
-                    Difficulty
+                    {t('recipes.difficulty')}
                   </label>
                   <select
                     id="difficulty"
@@ -147,7 +149,7 @@ const RecipesPage = () => {
                     value={selectedDifficulty}
                     onChange={(e) => setSelectedDifficulty(e.target.value)}
                   >
-                    <option value="">All Difficulties</option>
+                    <option value="">{t('All Difficulties', 'All Difficulties')}</option>
                     {difficulties.map((difficulty) => (
                       <option key={difficulty} value={difficulty}>
                         {difficulty}
@@ -157,7 +159,7 @@ const RecipesPage = () => {
                 </div>
 
                 <div className="sm:col-span-2">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">Tags</span>
+                  <span className="block text-sm font-medium text-gray-700 mb-1">{t('recipes.tags')}</span>
                   <div className="flex flex-wrap gap-2">
                     {allTags.map((tag) => (
                       <button
@@ -194,13 +196,13 @@ const RecipesPage = () => {
                         </div>
                         <div className="mt-3">
                           <p className="text-sm text-gray-500">
-                            <span className="font-medium">Prep:</span> {recipe.prep_time_minutes} min | 
-                            <span className="font-medium"> Cook:</span> {recipe.cook_time_minutes} min | 
-                            <span className="font-medium"> Servings:</span> {recipe.servings}
+                            <span className="font-medium">{t('recipes.prepTime')}:</span> {recipe.prep_time_minutes} min | 
+                            <span className="font-medium"> {t('recipes.cookTime')}:</span> {recipe.cook_time_minutes} min | 
+                            <span className="font-medium"> {t('recipes.servings')}:</span> {recipe.servings}
                           </p>
                         </div>
                         <div className="mt-4">
-                          <h4 className="text-sm font-medium text-gray-900">Ingredients:</h4>
+                          <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
                           <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
                             {recipe.ingredients.slice(0, 4).map((ingredient, index) => (
                               <li key={index}>{ingredient}</li>
@@ -215,7 +217,7 @@ const RecipesPage = () => {
                             to={`/recipes/${recipe.id}`}
                             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
-                            View Recipe
+                            {t('recipes.viewRecipe')}
                           </Link>
                         </div>
                       </div>
@@ -237,9 +239,9 @@ const RecipesPage = () => {
                         d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">No recipes found</h3>
+                    <h3 className="mt-2 text-sm font-medium text-gray-900">{t('recipes.noRecipesFound')}</h3>
                     <p className="mt-1 text-sm text-gray-500">
-                      Try adjusting your search or filters to find what you're looking for.
+                      {t('recipes.adjustSearchFilters')}
                     </p>
                   </div>
                 )}

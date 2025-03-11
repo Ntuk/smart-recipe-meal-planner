@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const RegisterPage = () => {
   const [username, setUsername] = useState('');
@@ -11,6 +12,7 @@ const RegisterPage = () => {
   
   const { register, isLoading, error } = useAuthContext();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,22 +20,22 @@ const RegisterPage = () => {
     
     // Basic validation
     if (!username.trim()) {
-      setFormError('Username is required');
+      setFormError(t('auth.username') + ' ' + t('common.error'));
       return;
     }
     
     if (!email.trim()) {
-      setFormError('Email is required');
+      setFormError(t('auth.email') + ' ' + t('common.error'));
       return;
     }
     
     if (!password.trim()) {
-      setFormError('Password is required');
+      setFormError(t('auth.password') + ' ' + t('common.error'));
       return;
     }
     
     if (password !== confirmPassword) {
-      setFormError('Passwords do not match');
+      setFormError(t('auth.passwordsDoNotMatch', 'Passwords do not match'));
       return;
     }
     
@@ -51,12 +53,12 @@ const RegisterPage = () => {
     <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Create a new account
+          {t('auth.registerTitle')}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          Or{' '}
+          {t('auth.or')}{' '}
           <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500">
-            sign in to your existing account
+            {t('auth.alreadyHaveAccount')}
           </Link>
         </p>
       </div>
@@ -91,7 +93,7 @@ const RegisterPage = () => {
 
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                Username
+                {t('auth.username')}
               </label>
               <div className="mt-1">
                 <input
@@ -109,7 +111,7 @@ const RegisterPage = () => {
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                Email address
+                {t('auth.email')}
               </label>
               <div className="mt-1">
                 <input
@@ -127,7 +129,7 @@ const RegisterPage = () => {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                Password
+                {t('auth.password')}
               </label>
               <div className="mt-1">
                 <input
@@ -145,7 +147,7 @@ const RegisterPage = () => {
 
             <div>
               <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700">
-                Confirm Password
+                {t('auth.confirmPassword', 'Confirm Password')}
               </label>
               <div className="mt-1">
                 <input
@@ -167,7 +169,7 @@ const RegisterPage = () => {
                 disabled={isLoading}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
-                {isLoading ? 'Creating account...' : 'Create account'}
+                {isLoading ? t('common.loading') : t('common.register')}
               </button>
             </div>
           </form>

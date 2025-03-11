@@ -57,7 +57,10 @@
     "registerSuccess": "Registration successful",
     "logoutSuccess": "Logout successful",
     "loginRequired": "You must be logged in to access this feature",
-    "rememberMe": "Remember me"
+    "rememberMe": "Remember me",
+    "confirmPassword": "Confirm Password",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "or": "Or"
   },
   "recipes": {
     "title": "Recipes",
@@ -73,7 +76,10 @@
     "addIngredient": "Add Ingredient",
     "quantity": "Quantity",
     "unit": "Unit",
-    "noRecipesFound": "No recipes found"
+    "noRecipesFound": "No recipes found",
+    "description": "Find recipes based on ingredients, cuisine, or dietary preferences",
+    "viewRecipe": "View Recipe",
+    "adjustSearchFilters": "Try adjusting your search or filters to find what you're looking for."
   },
   "scan": {
     "title": "Ingredient Scanner",
