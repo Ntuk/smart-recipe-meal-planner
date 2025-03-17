@@ -15,6 +15,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 import re
 import logging
 import difflib
+from .rabbitmq_utils import RabbitMQClient
 
 # Load environment variables
 load_dotenv()
@@ -27,12 +28,16 @@ logger = logging.getLogger(__name__)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
 
 # Initialize FastAPI app
 app = FastAPI(title="Ingredient Scanner Service", description="Service for scanning and extracting ingredients from images")
 
 # Security
 security = HTTPBearer()
+
+# Initialize RabbitMQ client
+rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
 
 # Add CORS middleware
 app.add_middleware(
@@ -49,12 +54,21 @@ async def startup_db_client():
     app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
     app.mongodb = app.mongodb_client[DB_NAME]
     
+    # Setup RabbitMQ exchanges and queues
+    if rabbitmq_client.connect():
+        rabbitmq_client.setup_ingredient_scanner_queues()
+    else:
+        logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
+
     # Create indexes for scans collection
     await app.mongodb["scans"].create_index("user_id")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     app.mongodb_client.close()
+    
+    # Close RabbitMQ connection
+    rabbitmq_client.close()
 
 # Models
 class IngredientItem(BaseModel):
@@ -404,6 +418,24 @@ async def scan_image(file: UploadFile = File(...), current_user: dict = Depends(
         
         await app.mongodb["scans"].insert_one(scan_data)
         
+        # Publish detected ingredients to RabbitMQ
+        message = {
+            "scan_id": scan_id,
+            "user_id": current_user["id"],
+            "ingredients": [ingredient.dict() for ingredient in ingredients],
+            "timestamp": created_at.isoformat()
+        }
+        
+        # Publish to RabbitMQ in a non-blocking way
+        success = rabbitmq_client.publish_message(
+            exchange_name="ingredients",
+            routing_key="ingredient.detected",
+            message=message
+        )
+        
+        if not success:
+            logger.warning(f"Failed to publish ingredients to RabbitMQ for scan_id: {scan_id}")
+        
         return ScanResult(
             scan_id=scan_id,
             ingredients=ingredients,
@@ -435,6 +467,25 @@ async def manual_input(request: ManualInputRequest, current_user: dict = Depends
         }
         
         await app.mongodb["scans"].insert_one(scan_data)
+        
+        # Publish detected ingredients to RabbitMQ
+        message = {
+            "scan_id": scan_id,
+            "user_id": current_user["id"],
+            "ingredients": [ingredient.dict() for ingredient in ingredients],
+            "timestamp": created_at.isoformat(),
+            "is_manual": True
+        }
+        
+        # Publish to RabbitMQ in a non-blocking way
+        success = rabbitmq_client.publish_message(
+            exchange_name="ingredients",
+            routing_key="ingredient.detected",
+            message=message
+        )
+        
+        if not success:
+            logger.warning(f"Failed to publish ingredients to RabbitMQ for scan_id: {scan_id}")
         
         return ScanResult(
             scan_id=scan_id,

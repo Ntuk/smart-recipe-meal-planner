@@ -12,6 +12,9 @@ import uuid
 from dotenv import load_dotenv
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, date
+import json
+import asyncio
+from .rabbitmq_utils import RabbitMQClient
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,9 +39,13 @@ app.add_middleware(
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
 RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://localhost:8001")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
 
 # MongoDB client
 client = None
+
+# Initialize RabbitMQ client
+rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
 
 # Security
 security = HTTPBearer()
@@ -132,11 +139,25 @@ async def startup_db_client():
     global client
     try:
         client = AsyncIOMotorClient(MONGODB_URI)
-        # Validate the connection
+        # Ping the database to check the connection
         await client.admin.command('ping')
         logger.info("Connected to MongoDB")
+        
+        # Setup RabbitMQ
+        if rabbitmq_client.connect():
+            rabbitmq_client.setup_meal_planning_queues()
+            
+            # Start consuming messages from the detected_ingredients queue
+            rabbitmq_client.start_consuming(
+                queue_name="detected_ingredients",
+                callback=process_detected_ingredients
+            )
+            logger.info("Started consuming messages from RabbitMQ")
+        else:
+            logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
+            
     except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
+        logger.error(f"Could not connect to MongoDB: {e}")
         raise
 
 @app.on_event("shutdown")
@@ -145,6 +166,11 @@ async def shutdown_db_client():
     if client:
         client.close()
         logger.info("MongoDB connection closed")
+    
+    # Stop consuming messages and close RabbitMQ connection
+    rabbitmq_client.stop_consuming()
+    rabbitmq_client.close()
+    logger.info("RabbitMQ connection closed")
 
 # Dependency to get database
 async def get_database():
@@ -239,6 +265,22 @@ async def create_meal_plan(
     })
     
     await get_database().meal_plans.insert_one(meal_plan_data)
+    
+    # Publish a message to notify that a meal plan has been created
+    message = {
+        "meal_plan_id": meal_plan_id,
+        "user_id": current_user["id"],
+        "start_date": meal_plan.start_date.isoformat(),
+        "end_date": meal_plan.end_date.isoformat(),
+        "days_count": len(days_data),
+        "timestamp": now.isoformat()
+    }
+    
+    rabbitmq_client.publish_message(
+        exchange_name="meal_plans",
+        routing_key="meal_plan.created",
+        message=message
+    )
     
     # Convert dates back to date objects for response
     meal_plan_data["start_date"] = meal_plan.start_date
@@ -353,4 +395,97 @@ async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_c
     # Delete meal plan
     await get_database().meal_plans.delete_one({"id": meal_plan_id})
     
-    return None 
+    return None
+
+def process_detected_ingredients(ch, method, properties, body):
+    """
+    Process detected ingredients from RabbitMQ.
+    This function is called when a message is received from the detected_ingredients queue.
+    
+    Args:
+        ch: Channel
+        method: Method
+        properties: Properties
+        body: Message body
+    """
+    try:
+        # Parse the message body
+        message = json.loads(body)
+        logger.info(f"Received message: {message}")
+        
+        # Extract ingredients from the message
+        scan_id = message.get("scan_id")
+        user_id = message.get("user_id")
+        ingredients_data = message.get("ingredients", [])
+        
+        if not scan_id or not user_id or not ingredients_data:
+            logger.warning("Invalid message format: missing required fields")
+            return
+        
+        # Extract ingredient names
+        ingredient_names = [item.get("name") for item in ingredients_data if item.get("name")]
+        
+        if not ingredient_names:
+            logger.warning("No valid ingredients found in the message")
+            return
+        
+        logger.info(f"Processing {len(ingredient_names)} ingredients for user {user_id}: {ingredient_names}")
+        
+        # Create a task to process the ingredients asynchronously
+        asyncio.create_task(process_ingredients_async(user_id, scan_id, ingredient_names))
+        
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+
+async def process_ingredients_async(user_id, scan_id, ingredient_names):
+    """
+    Process ingredients asynchronously.
+    This function is called from the RabbitMQ callback to process ingredients.
+    
+    Args:
+        user_id: User ID
+        scan_id: Scan ID
+        ingredient_names: List of ingredient names
+    """
+    try:
+        # Fetch recipes that match the ingredients
+        recipes = await fetch_recipes(ingredients=ingredient_names)
+        
+        if not recipes:
+            logger.warning(f"No recipes found for ingredients: {ingredient_names}")
+            return
+        
+        logger.info(f"Found {len(recipes)} recipes matching ingredients")
+        
+        # Store the suggested recipes in the database
+        suggestion = {
+            "user_id": user_id,
+            "scan_id": scan_id,
+            "ingredients": ingredient_names,
+            "suggested_recipes": recipes,
+            "created_at": datetime.utcnow()
+        }
+        
+        db = client[DATABASE_NAME]
+        await db.recipe_suggestions.insert_one(suggestion)
+        
+        # Publish a message to notify that recipes have been suggested
+        message = {
+            "user_id": user_id,
+            "scan_id": scan_id,
+            "suggestion_id": str(suggestion.get("_id")),
+            "ingredient_count": len(ingredient_names),
+            "recipe_count": len(recipes),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        rabbitmq_client.publish_message(
+            exchange_name="meal_plans",
+            routing_key="recipe.suggestion",
+            message=message
+        )
+        
+        logger.info(f"Processed ingredients and suggested recipes for user {user_id}")
+        
+    except Exception as e:
+        logger.error(f"Error processing ingredients asynchronously: {str(e)}") 

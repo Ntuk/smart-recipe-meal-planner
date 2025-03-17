@@ -38,11 +38,12 @@ The system implements a hybrid communication model:
 - Frontend → Ingredient Scanner Service: Upload images for OCR processing
 - Frontend → Meal Planning Service: Generate meal plans based on preferences
 - Frontend → Shopping List Service: Create and manage shopping lists
+- Meal Planning Service → Recipe Service: Fetch recipes for meal plan creation
 
 ### Asynchronous Communication (Event-Driven)
-The system uses RabbitMQ/Kafka for event-driven communication between services:
+The system uses RabbitMQ for event-driven communication between services:
 
-- Ingredient Scanner Service → Recipe Service: When new ingredients are detected, the Recipe Service is notified to update available recipes
+- Ingredient Scanner Service → Meal Planning Service: When new ingredients are detected, the Meal Planning Service is notified to suggest recipes
 - Meal Planning Service → Shopping List Service: When a meal plan is created, the Shopping List Service generates a list of missing ingredients
 - Services → Frontend: Real-time updates are pushed to the frontend when data changes
 - Auth Service → Other Services: User authentication events are broadcast to relevant services
@@ -61,7 +62,7 @@ The system uses RabbitMQ/Kafka for event-driven communication between services:
 - Database: MongoDB (document-based NoSQL)
 - Authentication: JWT-based authentication with refresh tokens
 - OCR: Tesseract OCR for ingredient detection
-- Messaging: RabbitMQ/Kafka for event-driven architecture
+- Messaging: RabbitMQ for event-driven architecture
 - API Gateway: Nginx for routing and load balancing
 
 ### Infrastructure

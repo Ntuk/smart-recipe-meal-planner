@@ -9,21 +9,33 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 import httpx
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import json
+import asyncio
+import logging
+from .rabbitmq_utils import RabbitMQClient
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # MongoDB Configuration
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
 MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://localhost:8003")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
 
 # Initialize FastAPI app
 app = FastAPI(title="Shopping List Service", description="Service for managing shopping lists")
 
 # Security
 security = HTTPBearer()
+
+# Initialize RabbitMQ client
+rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
 
 # Add CORS middleware
 app.add_middleware(
@@ -43,10 +55,28 @@ async def startup_db_client():
     # Create indexes for shopping lists collection
     await app.mongodb["shopping_lists"].create_index("user_id")
     await app.mongodb["shopping_lists"].create_index("meal_plan_id")
+    
+    # Setup RabbitMQ
+    if rabbitmq_client.connect():
+        rabbitmq_client.setup_shopping_list_queues()
+        
+        # Start consuming messages from the meal_plans_created queue
+        rabbitmq_client.start_consuming(
+            queue_name="meal_plans_created",
+            callback=process_meal_plan_created
+        )
+        
+        logger.info("Started consuming messages from RabbitMQ")
+    else:
+        logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     app.mongodb_client.close()
+    
+    # Stop consuming messages and close RabbitMQ connection
+    rabbitmq_client.stop_consuming()
+    rabbitmq_client.close()
 
 # Models
 class ShoppingListItem(BaseModel):
@@ -137,6 +167,107 @@ async def get_meal_plan_ingredients(meal_plan_id: str, token: str):
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Meal planning service unavailable",
             )
+
+def process_meal_plan_created(ch, method, properties, body):
+    """
+    Process meal plan created messages from RabbitMQ.
+    This function is called when a message is received from the meal_plans_created queue.
+    
+    Args:
+        ch: Channel
+        method: Method
+        properties: Properties
+        body: Message body
+    """
+    try:
+        # Parse the message body
+        message = json.loads(body)
+        logger.info(f"Received meal plan created message: {message}")
+        
+        # Extract meal plan data from the message
+        meal_plan_id = message.get("meal_plan_id")
+        user_id = message.get("user_id")
+        
+        if not meal_plan_id or not user_id:
+            logger.warning("Invalid message format: missing required fields")
+            return
+        
+        # Create a task to process the meal plan asynchronously
+        asyncio.create_task(create_shopping_list_from_meal_plan(user_id, meal_plan_id))
+        
+    except Exception as e:
+        logger.error(f"Error processing meal plan created message: {str(e)}")
+
+async def create_shopping_list_from_meal_plan(user_id, meal_plan_id):
+    """
+    Create a shopping list from a meal plan.
+    This function is called from the RabbitMQ callback to process meal plans.
+    
+    Args:
+        user_id: User ID
+        meal_plan_id: Meal Plan ID
+    """
+    try:
+        # Get the user's token for authentication with other services
+        # This is a simplified approach - in a real system, you might use a service account
+        # or a different authentication mechanism for service-to-service communication
+        token = "service_token"  # Placeholder
+        
+        # Fetch ingredients from the meal plan
+        ingredients = await get_meal_plan_ingredients(meal_plan_id, token)
+        
+        if not ingredients:
+            logger.warning(f"No ingredients found for meal plan: {meal_plan_id}")
+            return
+        
+        # Create shopping list items from ingredients
+        shopping_list_items = []
+        for ingredient in ingredients:
+            shopping_list_items.append(
+                ShoppingListItem(
+                    name=ingredient["name"],
+                    quantity=ingredient.get("quantity"),
+                    unit=ingredient.get("unit"),
+                    checked=False
+                )
+            )
+        
+        # Create a new shopping list
+        shopping_list_id = str(uuid.uuid4())
+        created_at = datetime.utcnow()
+        
+        shopping_list_data = {
+            "id": shopping_list_id,
+            "user_id": user_id,
+            "name": f"Shopping List for Meal Plan {meal_plan_id}",
+            "items": [item.dict() for item in shopping_list_items],
+            "meal_plan_id": meal_plan_id,
+            "created_at": created_at,
+            "updated_at": created_at
+        }
+        
+        # Store the shopping list in the database
+        await app.mongodb["shopping_lists"].insert_one(shopping_list_data)
+        
+        # Publish a message to notify that a shopping list has been created
+        message = {
+            "shopping_list_id": shopping_list_id,
+            "user_id": user_id,
+            "meal_plan_id": meal_plan_id,
+            "item_count": len(shopping_list_items),
+            "timestamp": created_at.isoformat()
+        }
+        
+        rabbitmq_client.publish_message(
+            exchange_name="shopping_lists",
+            routing_key="shopping_list.created",
+            message=message
+        )
+        
+        logger.info(f"Created shopping list {shopping_list_id} for meal plan {meal_plan_id}")
+        
+    except Exception as e:
+        logger.error(f"Error creating shopping list from meal plan: {str(e)}")
 
 # Routes
 @app.post("/shopping-lists", response_model=ShoppingList, status_code=status.HTTP_201_CREATED)
