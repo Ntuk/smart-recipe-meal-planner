@@ -6,7 +6,7 @@ A microservices-based distributed application that suggests meal plans based on 
 
 The Smart Recipe & Meal Planner is designed to solve a common problem: "What can I cook with the ingredients I have?" By leveraging microservices architecture and OCR technology, the system can:
 
-- Scan and identify ingredients from images (e.g., photos of your refrigerator contents)
+- Scan and identify ingredients from handwritten lists using OCR technology
 - Match available ingredients with suitable recipes
 - Generate personalized meal plans based on dietary preferences
 - Create shopping lists for missing ingredients
@@ -14,7 +14,7 @@ The Smart Recipe & Meal Planner is designed to solve a common problem: "What can
 
 ## Domain-Driven Design
 
-Following Domain-Driven Design (DDD) principles, we identified the following bounded contexts and their corresponding microservices:
+The Smart Recipe & Meal Planner implements Domain-Driven Design (DDD) principles with the following bounded contexts and their corresponding microservices:
 
 | Bounded Context | Microservice | Core Responsibilities |
 |-----------------|--------------|------------------------|
@@ -201,7 +201,7 @@ The application implements a secure JWT-based authentication system:
 
 ### Prerequisites
 - Node.js (v16+)
-- Python (v3.9+)
+- Python (v3.11+)
 - Docker and Docker Compose
 
 ### Installation
@@ -218,7 +218,6 @@ cd smart-recipe-meal-planner
 
 3. Access the application
    - Frontend: http://localhost:5174
-   - API Documentation: http://localhost:8000/docs
 
 ### Development
 
@@ -263,15 +262,6 @@ smart-recipe-meal-planner/
 └── docker-compose.yml        # Docker compose configuration
 ```
 
-## Testing Strategy
-
-The application includes both unit and integration tests:
-
-- **Unit Tests**: Each microservice has its own unit tests for business logic
-- **Integration Tests**: Tests for API endpoints and service interactions
-- **End-to-End Tests**: Tests for complete user workflows
-- **Authentication Tests**: Specific tests for the auth flow and token management
-
 ## Security Considerations
 
 - **Authentication**: JWT-based authentication with refresh tokens for API access
@@ -296,11 +286,7 @@ The application includes both unit and integration tests:
 
 ## Deployment
 
-The application is containerized using Docker and can be deployed to:
-
-- Local development environment
-- Cloud providers (AWS, GCP, Azure)
-- Kubernetes cluster for production
+The application is containerized using Docker and can be deployed to various environments.
 
 ## Contributors
 
