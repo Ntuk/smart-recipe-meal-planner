@@ -211,13 +211,13 @@ git clone https://github.com/yourusername/smart-recipe-meal-planner.git
 cd smart-recipe-meal-planner
 ```
 
-2. Start the services using Docker Compose
+2. Start the services
 ```bash
-docker-compose up
+./start-dev.sh
 ```
 
 3. Access the application
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:5174
    - API Documentation: http://localhost:8000/docs
 
 ### Development
