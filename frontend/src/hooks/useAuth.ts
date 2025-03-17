@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authApiService } from '../services/api';
-import jwtDecode from 'jwt-decode';
 
 interface User {
   id: string;
@@ -71,7 +70,9 @@ export const useAuth = () => {
 
   const login = useCallback(async (credentials: LoginCredentials) => {
     try {
+      console.log('Attempting login with email:', credentials.email);
       const response = await authApiService.login(credentials);
+      console.log('Login response:', response);
       
       // Get user profile after successful login
       const userData = await authApiService.getProfile();
@@ -83,18 +84,38 @@ export const useAuth = () => {
       });
       
       return { success: true };
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch (error: any) {
+      console.error('Login error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        request: error.config?.data
+      });
+
+      if (error.response?.status === 401) {
+        return { 
+          success: false, 
+          error: "Invalid email or password" 
+        };
+      }
+
       return { 
         success: false, 
-        error: 'Invalid email or password' 
+        error: error.response?.data?.detail || 'Login failed. Please try again.' 
       };
     }
   }, []);
 
   const register = useCallback(async (data: RegisterData) => {
     try {
-      await authApiService.register(data);
+      console.log('Attempting registration with data:', data);
+      const response = await authApiService.register(data);
+      console.log('Registration response:', response);
+      
+      // Save the token if it's in the response
+      if (response.access_token) {
+        localStorage.setItem('auth_token', response.access_token);
+      }
       
       // Get user profile after successful registration
       const userData = await authApiService.getProfile();
@@ -107,10 +128,26 @@ export const useAuth = () => {
       
       return { success: true };
     } catch (error: any) {
-      console.error('Registration error:', error);
+      console.error('Registration error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        request: error.config?.data
+      });
+
+      // Handle specific error cases
+      if (error.response?.status === 400) {
+        const detail = error.response.data?.detail;
+        if (detail === "Email already registered") {
+          return { success: false, error: "This email is already registered" };
+        } else if (detail === "Username already taken") {
+          return { success: false, error: "This username is already taken" };
+        }
+      }
+
       return { 
         success: false, 
-        error: error.response?.data?.detail || 'Registration failed' 
+        error: error.response?.data?.detail || 'Registration failed. Please try again.' 
       };
     }
   }, []);

@@ -72,15 +72,9 @@ export const authApiService = {
   
   // Login user
   login: async (credentials: { email: string; password: string }) => {
-    // Convert to form data for OAuth2 compatibility
-    const formData = new FormData();
-    formData.append('username', credentials.email);
-    formData.append('password', credentials.password);
-    
-    const response = await authApi.post('/login', formData, {
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+    const response = await authApi.post('/login-json', {
+      username: credentials.email,
+      password: credentials.password
     });
     
     // Store token in localStorage
