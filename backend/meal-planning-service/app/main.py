@@ -15,6 +15,15 @@ from datetime import datetime, date
 import json
 import asyncio
 from .rabbitmq_utils import RabbitMQClient
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+import time
+
+# Prometheus metrics
+REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('meal_planning_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
+MEAL_PLAN_OPERATIONS = Counter('meal_planning_service_operations_total', 'Total meal plan operations', ['operation', 'status'])
+RECIPE_SERVICE_LATENCY = Histogram('meal_planning_service_recipe_service_duration_seconds', 'Recipe service request latency in seconds', ['operation'])
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,13 +45,10 @@ app.add_middleware(
 )
 
 # MongoDB connection
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-DATABASE_NAME = os.getenv("DATABASE_NAME", "recipe_db")
+MONGODB_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+DATABASE_NAME = os.getenv("DB_NAME", "recipe_db")
 RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://localhost:8001")
 RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
-
-# MongoDB client
-client = None
 
 # Initialize RabbitMQ client
 rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
@@ -136,11 +142,11 @@ class MealPlanResponse(BaseModel):
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    global client
     try:
-        client = AsyncIOMotorClient(MONGODB_URI)
+        app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
+        app.mongodb = app.mongodb_client[DATABASE_NAME]
         # Ping the database to check the connection
-        await client.admin.command('ping')
+        await app.mongodb_client.admin.command('ping')
         logger.info("Connected to MongoDB")
         
         # Setup RabbitMQ
@@ -162,10 +168,7 @@ async def startup_db_client():
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    global client
-    if client:
-        client.close()
-        logger.info("MongoDB connection closed")
+    app.mongodb_client.close()
     
     # Stop consuming messages and close RabbitMQ connection
     rabbitmq_client.stop_consuming()
@@ -174,7 +177,7 @@ async def shutdown_db_client():
 
 # Dependency to get database
 async def get_database():
-    return client[DATABASE_NAME]
+    return app.mongodb
 
 # Authentication dependency
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -199,6 +202,30 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 detail="Authentication service unavailable",
             )
 
+# Request monitoring middleware
+@app.middleware("http")
+async def monitor_requests(request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    
+    REQUESTS.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
+    return response
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 # Helper function to fetch recipes from Recipe Service
 async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
     params = {}
@@ -210,9 +237,11 @@ async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
         params["cuisine"] = cuisine
     
     try:
+        start_time = time.time()
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{RECIPE_SERVICE_URL}/recipes", params=params)
             response.raise_for_status()
+            RECIPE_SERVICE_LATENCY.labels(operation="fetch_recipes").observe(time.time() - start_time)
             return response.json()
     except httpx.HTTPError as e:
         logger.error(f"Error fetching recipes: {e}")
@@ -221,9 +250,11 @@ async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
 # Helper function to fetch a recipe by ID from Recipe Service
 async def fetch_recipe_by_id(recipe_id):
     try:
+        start_time = time.time()
         async with httpx.AsyncClient() as client:
             response = await client.get(f"{RECIPE_SERVICE_URL}/recipes/{recipe_id}")
             response.raise_for_status()
+            RECIPE_SERVICE_LATENCY.labels(operation="fetch_recipe_by_id").observe(time.time() - start_time)
             return response.json()
     except httpx.HTTPError as e:
         logger.error(f"Error fetching recipe {recipe_id}: {e}")
@@ -243,52 +274,39 @@ async def create_meal_plan(
     meal_plan: MealPlanCreate,
     current_user: dict = Depends(get_current_user)
 ):
-    now = datetime.utcnow()
-    meal_plan_id = str(uuid.uuid4())
-    
-    # Convert days to dict for MongoDB
-    days_data = []
-    for day in meal_plan.days:
-        day_dict = day.dict()
-        day_dict["date"] = day.date.isoformat()
-        days_data.append(day_dict)
-    
-    meal_plan_data = meal_plan.dict(exclude={"days"})
-    meal_plan_data.update({
-        "id": meal_plan_id,
-        "user_id": current_user["id"],
-        "days": days_data,
-        "start_date": meal_plan.start_date.isoformat(),
-        "end_date": meal_plan.end_date.isoformat(),
-        "created_at": now,
-        "updated_at": now
-    })
-    
-    await get_database().meal_plans.insert_one(meal_plan_data)
-    
-    # Publish a message to notify that a meal plan has been created
-    message = {
-        "meal_plan_id": meal_plan_id,
-        "user_id": current_user["id"],
-        "start_date": meal_plan.start_date.isoformat(),
-        "end_date": meal_plan.end_date.isoformat(),
-        "days_count": len(days_data),
-        "timestamp": now.isoformat()
-    }
-    
-    rabbitmq_client.publish_message(
-        exchange_name="meal_plans",
-        routing_key="meal_plan.created",
-        message=message
-    )
-    
-    # Convert dates back to date objects for response
-    meal_plan_data["start_date"] = meal_plan.start_date
-    meal_plan_data["end_date"] = meal_plan.end_date
-    for day in meal_plan_data["days"]:
-        day["date"] = date.fromisoformat(day["date"])
-    
-    return meal_plan_data
+    try:
+        now = datetime.utcnow()
+        meal_plan_id = str(uuid.uuid4())
+        
+        # Convert days to dict for MongoDB
+        days_data = []
+        for day in meal_plan.days:
+            day_dict = day.dict()
+            day_dict["date"] = day.date.isoformat()
+            days_data.append(day_dict)
+        
+        meal_plan_data = {
+            "id": meal_plan_id,
+            "user_id": current_user["id"],
+            "name": meal_plan.name,
+            "start_date": meal_plan.start_date.isoformat(),
+            "end_date": meal_plan.end_date.isoformat(),
+            "days": days_data,
+            "notes": meal_plan.notes,
+            "created_at": now,
+            "updated_at": now
+        }
+        
+        await app.mongodb.meal_plans.insert_one(meal_plan_data)
+        MEAL_PLAN_OPERATIONS.labels(operation="create", status="success").inc()
+        return meal_plan_data
+    except Exception as e:
+        MEAL_PLAN_OPERATIONS.labels(operation="create", status="error").inc()
+        logger.error(f"Error creating meal plan: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating meal plan"
+        )
 
 @app.get("/meal-plans", response_model=List[MealPlan])
 async def get_meal_plans(
@@ -296,45 +314,48 @@ async def get_meal_plans(
     end_date: Optional[date] = None,
     current_user: dict = Depends(get_current_user)
 ):
-    query = {"user_id": current_user["id"]}
-    
-    # Add date filters if provided
-    if start_date:
-        query["start_date"] = {"$gte": start_date.isoformat()}
-    
-    if end_date:
-        query["end_date"] = {"$lte": end_date.isoformat()}
-    
-    meal_plans = []
-    cursor = get_database().meal_plans.find(query).sort("start_date", -1)
-    async for document in cursor:
-        # Convert date strings to date objects
-        document["start_date"] = date.fromisoformat(document["start_date"])
-        document["end_date"] = date.fromisoformat(document["end_date"])
-        for day in document["days"]:
-            day["date"] = date.fromisoformat(day["date"])
+    try:
+        query = {"user_id": current_user["id"]}
         
-        meal_plans.append(document)
-    
-    return meal_plans
+        if start_date:
+            query["start_date"] = {"$gte": start_date.isoformat()}
+        if end_date:
+            query["end_date"] = {"$lte": end_date.isoformat()}
+        
+        cursor = app.mongodb.meal_plans.find(query)
+        meal_plans = await cursor.to_list(length=None)
+        
+        MEAL_PLAN_OPERATIONS.labels(operation="list", status="success").inc()
+        return meal_plans
+    except Exception as e:
+        MEAL_PLAN_OPERATIONS.labels(operation="list", status="error").inc()
+        logger.error(f"Error fetching meal plans: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching meal plans"
+        )
 
 @app.get("/meal-plans/{meal_plan_id}", response_model=MealPlan)
 async def get_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
-    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
-    
-    if not meal_plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Meal plan with ID {meal_plan_id} not found"
-        )
-    
-    # Convert date strings to date objects
-    meal_plan["start_date"] = date.fromisoformat(meal_plan["start_date"])
-    meal_plan["end_date"] = date.fromisoformat(meal_plan["end_date"])
-    for day in meal_plan["days"]:
-        day["date"] = date.fromisoformat(day["date"])
-    
-    return meal_plan
+    try:
+        meal_plan = await app.mongodb.meal_plans.find_one({
+            "id": meal_plan_id,
+            "user_id": current_user["id"]
+        })
+        
+        if not meal_plan:
+            MEAL_PLAN_OPERATIONS.labels(operation="get", status="not_found").inc()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meal plan {meal_plan_id} not found"
+            )
+        
+        MEAL_PLAN_OPERATIONS.labels(operation="get", status="success").inc()
+        return meal_plan
+    except Exception as e:
+        if not isinstance(e, HTTPException):
+            MEAL_PLAN_OPERATIONS.labels(operation="get", status="error").inc()
+        raise e
 
 @app.put("/meal-plans/{meal_plan_id}", response_model=MealPlan)
 async def update_meal_plan(
@@ -342,60 +363,68 @@ async def update_meal_plan(
     meal_plan_update: MealPlanUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    # Check if meal plan exists
-    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
-    
-    if not meal_plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Meal plan with ID {meal_plan_id} not found"
+    try:
+        # Check if meal plan exists and belongs to user
+        meal_plan = await app.mongodb.meal_plans.find_one({
+            "id": meal_plan_id,
+            "user_id": current_user["id"]
+        })
+        
+        if not meal_plan:
+            MEAL_PLAN_OPERATIONS.labels(operation="update", status="not_found").inc()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meal plan {meal_plan_id} not found"
+            )
+        
+        # Update meal plan
+        update_data = meal_plan_update.dict(exclude_unset=True)
+        if "days" in update_data:
+            days_data = []
+            for day in update_data["days"]:
+                day_dict = day.dict()
+                day_dict["date"] = day.date.isoformat()
+                days_data.append(day_dict)
+            update_data["days"] = days_data
+        
+        update_data["updated_at"] = datetime.utcnow()
+        
+        await app.mongodb.meal_plans.update_one(
+            {"id": meal_plan_id},
+            {"$set": update_data}
         )
-    
-    # Update meal plan
-    update_data = meal_plan_update.dict(exclude_unset=True)
-    
-    # Convert days to dict for MongoDB if provided
-    if "days" in update_data:
-        days_data = []
-        for day in meal_plan_update.days:
-            day_dict = day.dict()
-            day_dict["date"] = day.date.isoformat()
-            days_data.append(day_dict)
-        update_data["days"] = days_data
-    
-    update_data["updated_at"] = datetime.utcnow()
-    
-    await get_database().meal_plans.update_one(
-        {"id": meal_plan_id},
-        {"$set": update_data}
-    )
-    
-    # Get updated meal plan
-    updated_meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id})
-    
-    # Convert date strings to date objects
-    updated_meal_plan["start_date"] = date.fromisoformat(updated_meal_plan["start_date"])
-    updated_meal_plan["end_date"] = date.fromisoformat(updated_meal_plan["end_date"])
-    for day in updated_meal_plan["days"]:
-        day["date"] = date.fromisoformat(day["date"])
-    
-    return updated_meal_plan
+        
+        updated_meal_plan = await app.mongodb.meal_plans.find_one({"id": meal_plan_id})
+        MEAL_PLAN_OPERATIONS.labels(operation="update", status="success").inc()
+        return updated_meal_plan
+    except Exception as e:
+        if not isinstance(e, HTTPException):
+            MEAL_PLAN_OPERATIONS.labels(operation="update", status="error").inc()
+        raise e
 
 @app.delete("/meal-plans/{meal_plan_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
-    # Check if meal plan exists
-    meal_plan = await get_database().meal_plans.find_one({"id": meal_plan_id, "user_id": current_user["id"]})
-    
-    if not meal_plan:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Meal plan with ID {meal_plan_id} not found"
-        )
-    
-    # Delete meal plan
-    await get_database().meal_plans.delete_one({"id": meal_plan_id})
-    
-    return None
+    try:
+        # Check if meal plan exists and belongs to user
+        meal_plan = await app.mongodb.meal_plans.find_one({
+            "id": meal_plan_id,
+            "user_id": current_user["id"]
+        })
+        
+        if not meal_plan:
+            MEAL_PLAN_OPERATIONS.labels(operation="delete", status="not_found").inc()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meal plan {meal_plan_id} not found"
+            )
+        
+        # Delete meal plan
+        await app.mongodb.meal_plans.delete_one({"id": meal_plan_id})
+        MEAL_PLAN_OPERATIONS.labels(operation="delete", status="success").inc()
+    except Exception as e:
+        if not isinstance(e, HTTPException):
+            MEAL_PLAN_OPERATIONS.labels(operation="delete", status="error").inc()
+        raise e
 
 def process_detected_ingredients(ch, method, properties, body):
     """
@@ -466,7 +495,7 @@ async def process_ingredients_async(user_id, scan_id, ingredient_names):
             "created_at": datetime.utcnow()
         }
         
-        db = client[DATABASE_NAME]
+        db = app.mongodb
         await db.recipe_suggestions.insert_one(suggestion)
         
         # Publish a message to notify that recipes have been suggested

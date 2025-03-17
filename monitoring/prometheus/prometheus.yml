@@ -5,27 +5,27 @@ global:
 scrape_configs:
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['localhost:9090']
+      - targets: ['localhost:9095']
 
   - job_name: 'auth-service'
     static_configs:
-      - targets: ['host.docker.internal:8000']
+      - targets: ['auth-service:8000']
 
   - job_name: 'recipe-service'
     static_configs:
-      - targets: ['host.docker.internal:8001']
+      - targets: ['recipe-service:8000']
 
   - job_name: 'ingredient-scanner-service'
     static_configs:
-      - targets: ['host.docker.internal:8002']
+      - targets: ['ingredient-scanner-service:8000']
 
   - job_name: 'meal-planning-service'
     static_configs:
-      - targets: ['host.docker.internal:8003']
+      - targets: ['meal-planning-service:8000']
 
   - job_name: 'shopping-list-service'
     static_configs:
-      - targets: ['host.docker.internal:8004']
+      - targets: ['shopping-list-service:8000']
 
   - job_name: 'mongodb'
     static_configs:

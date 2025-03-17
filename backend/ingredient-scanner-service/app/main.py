@@ -16,6 +16,15 @@ import re
 import logging
 import difflib
 from .rabbitmq_utils import RabbitMQClient
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+import time
+
+# Prometheus metrics
+REQUESTS = Counter('ingredient_scanner_service_requests_total', 'Total requests to the ingredient scanner service', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('ingredient_scanner_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
+SCAN_OPERATIONS = Counter('ingredient_scanner_service_operations_total', 'Total scan operations', ['operation', 'status'])
+OCR_LATENCY = Histogram('ingredient_scanner_service_ocr_duration_seconds', 'OCR processing time in seconds')
 
 # Load environment variables
 load_dotenv()
@@ -32,6 +41,30 @@ RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
 
 # Initialize FastAPI app
 app = FastAPI(title="Ingredient Scanner Service", description="Service for scanning and extracting ingredients from images")
+
+# Request monitoring middleware
+@app.middleware("http")
+async def monitor_requests(request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    
+    REQUESTS.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
+    return response
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # Security
 security = HTTPBearer()
@@ -370,131 +403,84 @@ def detect_common_foods_in_image(image, all_text=""):
 async def scan_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Scan an image to extract ingredients."""
     try:
-        # Check if the file is an image
-        content_type = file.content_type
-        if not content_type or not content_type.startswith('image/'):
-            raise HTTPException(status_code=400, detail="File must be an image")
+        # Start OCR timing
+        ocr_start_time = time.time()
         
-        # Read the image
+        # Process image and extract text
         contents = await file.read()
-        original_image = Image.open(io.BytesIO(contents))
+        image = Image.open(io.BytesIO(contents))
         
-        # Optimize image for text recognition
-        # Convert to grayscale
-        image = original_image.convert('L')
-        
-        # Increase contrast
+        # Enhance image for better OCR
+        image = image.convert('L')  # Convert to grayscale
+        image = image.filter(ImageFilter.SHARPEN)
         enhancer = ImageEnhance.Contrast(image)
         image = enhancer.enhance(2.0)
         
-        # Apply adaptive thresholding
-        threshold = 150
-        image = image.point(lambda p: p > threshold and 255)
+        # Perform OCR
+        text = pytesseract.image_to_string(image)
         
-        # Apply denoising
-        image = image.filter(ImageFilter.MedianFilter(size=3))
+        # Record OCR duration
+        OCR_LATENCY.observe(time.time() - ocr_start_time)
         
-        # Set Tesseract configuration for handwritten text
-        custom_config = r'--oem 3 --psm 6'
-        
-        # Extract text using OCR
-        text = pytesseract.image_to_string(image, config=custom_config)
-        
-        # Extract ingredients from the text
+        # Extract ingredients from text
         ingredients = extract_ingredients_from_text(text)
         
-        # Generate a unique ID for this scan
+        # Store scan result
         scan_id = str(uuid.uuid4())
-        created_at = datetime.utcnow()
-        
-        # Store the scan in the database
-        scan_data = {
-            "user_id": current_user["id"],
-            "scan_id": scan_id,
-            "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "original_text": text,
-            "created_at": created_at
-        }
-        
-        await app.mongodb["scans"].insert_one(scan_data)
-        
-        # Publish detected ingredients to RabbitMQ
-        message = {
+        scan_result = {
             "scan_id": scan_id,
             "user_id": current_user["id"],
             "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "timestamp": created_at.isoformat()
+            "created_at": datetime.utcnow()
         }
         
-        # Publish to RabbitMQ in a non-blocking way
-        success = rabbitmq_client.publish_message(
-            exchange_name="ingredients",
-            routing_key="ingredient.detected",
-            message=message
-        )
+        await app.mongodb["scans"].insert_one(scan_result)
         
-        if not success:
-            logger.warning(f"Failed to publish ingredients to RabbitMQ for scan_id: {scan_id}")
+        # Publish to RabbitMQ for async processing
+        if rabbitmq_client.is_connected():
+            rabbitmq_client.publish_scan_result(scan_result)
         
-        return ScanResult(
-            scan_id=scan_id,
-            ingredients=ingredients,
-            created_at=created_at
-        )
+        SCAN_OPERATIONS.labels(operation="scan", status="success").inc()
+        return scan_result
     except Exception as e:
-        logger.error(f"Error processing image: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+        SCAN_OPERATIONS.labels(operation="scan", status="error").inc()
+        logger.error(f"Error processing scan: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error processing image"
+        )
 
 @app.post("/manual-input", response_model=ScanResult)
 async def manual_input(request: ManualInputRequest, current_user: dict = Depends(get_current_user)):
     """Process manually entered text to extract ingredients."""
     try:
-        # Extract ingredients from the text
+        # Extract ingredients from text
         ingredients = extract_ingredients_from_text(request.text)
         
-        # Generate a unique ID for this scan
+        # Store scan result
         scan_id = str(uuid.uuid4())
-        created_at = datetime.utcnow()
-        
-        # Store the scan in the database
-        scan_data = {
-            "user_id": current_user["id"],
-            "scan_id": scan_id,
-            "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "original_text": request.text,
-            "created_at": created_at,
-            "is_manual": True
-        }
-        
-        await app.mongodb["scans"].insert_one(scan_data)
-        
-        # Publish detected ingredients to RabbitMQ
-        message = {
+        scan_result = {
             "scan_id": scan_id,
             "user_id": current_user["id"],
             "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "timestamp": created_at.isoformat(),
-            "is_manual": True
+            "created_at": datetime.utcnow()
         }
         
-        # Publish to RabbitMQ in a non-blocking way
-        success = rabbitmq_client.publish_message(
-            exchange_name="ingredients",
-            routing_key="ingredient.detected",
-            message=message
-        )
+        await app.mongodb["scans"].insert_one(scan_result)
         
-        if not success:
-            logger.warning(f"Failed to publish ingredients to RabbitMQ for scan_id: {scan_id}")
+        # Publish to RabbitMQ for async processing
+        if rabbitmq_client.is_connected():
+            rabbitmq_client.publish_scan_result(scan_result)
         
-        return ScanResult(
-            scan_id=scan_id,
-            ingredients=ingredients,
-            created_at=created_at
-        )
+        SCAN_OPERATIONS.labels(operation="manual_input", status="success").inc()
+        return scan_result
     except Exception as e:
+        SCAN_OPERATIONS.labels(operation="manual_input", status="error").inc()
         logger.error(f"Error processing manual input: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing manual input: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error processing text input"
+        )
 
 @app.get("/scans", response_model=List[ScanResult])
 async def get_scans(current_user: dict = Depends(get_current_user)):
