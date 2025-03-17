@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# Parse command line arguments
+MONITOR=false
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --monitor) MONITOR=true ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 # Stop any existing MongoDB container
 echo "Stopping any existing MongoDB container..."
 docker stop mongodb 2>/dev/null || true
@@ -47,6 +57,15 @@ echo "Starting Frontend..."
 cd frontend
 npm run dev &
 cd ..
+
+# Start monitoring services if --monitor flag is set
+if [ "$MONITOR" = true ]; then
+    echo "Starting monitoring services..."
+    docker compose -f docker-compose.yml up -d prometheus grafana
+    echo "Monitoring services started!"
+    echo "Grafana: http://localhost:3000"
+    echo "Prometheus: http://localhost:9090"
+fi
 
 echo "All services started!"
 echo "Frontend: http://localhost:5173"

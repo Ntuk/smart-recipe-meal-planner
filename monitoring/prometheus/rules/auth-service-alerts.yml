@@ -1,0 +1,72 @@
+groups:
+  - name: auth-service
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 10% for the last 5 minutes"
+
+      # High failed login attempts alert
+      - alert: HighFailedLoginAttempts
+        expr: rate(login_attempts_total{status="failed"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High failed login attempts
+          description: "More than 10 failed login attempts per minute"
+
+      # High rate limit exceeded alert
+      - alert: HighRateLimitExceeded
+        expr: rate(rate_limit_exceeded[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High rate limit exceeded
+          description: "Rate limit exceeded more than 5 times per minute"
+
+      # High number of active tokens alert
+      - alert: HighActiveTokens
+        expr: active_tokens > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High number of active tokens
+          description: "More than 5 active tokens per user"
+
+      # High number of active sessions alert
+      - alert: HighActiveSessions
+        expr: active_sessions > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High number of active sessions
+          description: "More than 3 active sessions per user"
+
+      # Database operation failures alert
+      - alert: DatabaseOperationFailures
+        expr: rate(db_operations_total{status="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database operation failures
+          description: "Database operations are failing"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="auth-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Service is down
+          description: "Auth service is not responding" 

@@ -1,0 +1,62 @@
+groups:
+  - name: ingredient-scanner
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 10% for the last 5 minutes"
+
+      # Queue size alert
+      - alert: LargeProcessingQueue
+        expr: queue_size > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Large processing queue
+          description: "Processing queue has more than 100 items for 5 minutes"
+
+      # Low OCR confidence alert
+      - alert: LowOCRConfidence
+        expr: ocr_confidence_score < 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low OCR confidence
+          description: "OCR confidence score is below 70%"
+
+      # High OCR processing time alert
+      - alert: HighOCRProcessingTime
+        expr: rate(ocr_processing_time_seconds_sum[5m]) / rate(ocr_processing_time_seconds_count[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High OCR processing time
+          description: "Average OCR processing time is above 10 seconds"
+
+      # Database operation failures alert
+      - alert: DatabaseOperationFailures
+        expr: rate(db_operations_total{status="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database operation failures
+          description: "Database operations are failing"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="ingredient-scanner"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Service is down
+          description: "Ingredient scanner service is not responding" 

@@ -1,0 +1,72 @@
+groups:
+  - name: meal-planning-service
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 10% for the last 5 minutes"
+
+      # Low nutrition goals met alert
+      - alert: LowNutritionGoalsMet
+        expr: nutrition_goals_met < 70
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low nutrition goals met
+          description: "Nutrition goals are below 70% for some meal plans"
+
+      # High calorie variance alert
+      - alert: HighCalorieVariance
+        expr: abs(calorie_variance) > 500
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High calorie variance
+          description: "Calorie variance is above 500 from target"
+
+      # High plan generation time alert
+      - alert: HighPlanGenerationTime
+        expr: rate(meal_plan_generation_time_seconds_sum[5m]) / rate(meal_plan_generation_time_seconds_count[5m]) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High plan generation time
+          description: "Average plan generation time is above 30 seconds"
+
+      # High preference violations alert
+      - alert: HighPreferenceViolations
+        expr: rate(preference_violations_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High preference violations
+          description: "More than 10 preference violations per minute"
+
+      # Low recommendation accuracy alert
+      - alert: LowRecommendationAccuracy
+        expr: recipe_recommendation_accuracy < 0.7
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low recommendation accuracy
+          description: "Recipe recommendation accuracy is below 70%"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="meal-planning-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Service is down
+          description: "Meal planning service is not responding" 

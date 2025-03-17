@@ -1,0 +1,62 @@
+groups:
+  - name: recipe-service
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 10% for the last 5 minutes"
+
+      # Low cache hit rate alert
+      - alert: LowCacheHitRate
+        expr: rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) < 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low cache hit rate
+          description: "Cache hit rate is below 50% for the last 5 minutes"
+
+      # Database operation failures alert
+      - alert: DatabaseOperationFailures
+        expr: rate(db_operations_total{status="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database operation failures
+          description: "Database operations are failing"
+
+      # High recipe complexity alert
+      - alert: HighRecipeComplexity
+        expr: recipe_complexity_score > 8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High recipe complexity
+          description: "Recipe complexity score is above 8"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="recipe-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Service is down
+          description: "Recipe service is not responding"
+
+      # High search failure rate alert
+      - alert: HighSearchFailureRate
+        expr: rate(recipe_search_total{status="error"}[5m]) / rate(recipe_search_total[5m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High search failure rate
+          description: "Recipe search failure rate is above 20%" 

@@ -1,0 +1,72 @@
+groups:
+  - name: shopping-list-service
+    rules:
+      # High error rate alert
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: High error rate detected
+          description: "Error rate is above 10% for the last 5 minutes"
+
+      # Low list completion rate alert
+      - alert: LowListCompletionRate
+        expr: list_completion_rate < 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Low list completion rate
+          description: "List completion rate is below 50% for some lists"
+
+      # High list completion time alert
+      - alert: HighListCompletionTime
+        expr: rate(list_completion_time_seconds_sum[5m]) / rate(list_completion_time_seconds_count[5m]) > 3600
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High list completion time
+          description: "Average list completion time is above 1 hour"
+
+      # High number of items per list alert
+      - alert: HighItemsPerList
+        expr: rate(items_per_list_sum[5m]) / rate(items_per_list_count[5m]) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High number of items per list
+          description: "Average number of items per list is above 50"
+
+      # High number of active shares alert
+      - alert: HighActiveShares
+        expr: active_shares > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: High number of active shares
+          description: "More than 10 active shares for a list"
+
+      # Database operation failures alert
+      - alert: DatabaseOperationFailures
+        expr: rate(db_operations_total{status="error"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Database operation failures
+          description: "Database operations are failing"
+
+      # Service down alert
+      - alert: ServiceDown
+        expr: up{job="shopping-list-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Service is down
+          description: "Shopping list service is not responding" 

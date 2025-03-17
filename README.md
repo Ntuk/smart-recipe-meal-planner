@@ -68,6 +68,7 @@ The system uses RabbitMQ for event-driven communication between services:
 ### Infrastructure
 - Containerization: Docker
 - Orchestration: Docker Compose
+- Monitoring: Prometheus + Grafana
 
 ## Database Schema
 
@@ -213,11 +214,19 @@ cd smart-recipe-meal-planner
 
 2. Start the services
 ```bash
+# Start without monitoring
 ./start-dev.sh
+
+# Start with monitoring (includes Prometheus and Grafana)
+./start-dev.sh --monitor
 ```
 
 3. Access the application
    - Frontend: http://localhost:5174
+   - Grafana Dashboard: http://localhost:3000/dashboards (default credentials: admin/admin)
+   - Prometheus: http://localhost:9090
+
+Note: The monitoring stack (Prometheus and Grafana) is optional and can be started using the `--monitor` flag. This will enable metrics collection and visualization for all services.
 
 ### Development
 

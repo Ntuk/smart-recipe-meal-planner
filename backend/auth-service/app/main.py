@@ -10,6 +10,15 @@ import os
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 import uuid
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+import time
+
+# Prometheus metrics
+REQUESTS = Counter('auth_service_requests_total', 'Total requests to the auth service', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('auth_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
+LOGIN_ATTEMPTS = Counter('auth_service_login_attempts_total', 'Total login attempts', ['status'])
+REGISTRATIONS = Counter('auth_service_registrations_total', 'Total user registrations', ['status'])
 
 # Load environment variables
 load_dotenv()
@@ -143,64 +152,100 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
+@app.middleware("http")
+async def monitor_requests(request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    
+    REQUESTS.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
+    return response
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
 # Routes
 @app.post("/register", response_model=Token)
 async def register_user(user: UserCreate):
-    # Check if user already exists
-    existing_user = await app.mongodb["users"].find_one({"email": user.email})
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+    try:
+        # Check if user already exists
+        existing_user = await app.mongodb["users"].find_one({"email": user.email})
+        if existing_user:
+            REGISTRATIONS.labels(status="duplicate_email").inc()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
+        
+        existing_username = await app.mongodb["users"].find_one({"username": user.username})
+        if existing_username:
+            REGISTRATIONS.labels(status="duplicate_username").inc()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+        
+        # Create new user
+        user_id = str(uuid.uuid4())
+        now = datetime.utcnow()
+        
+        user_in_db = UserInDB(
+            id=user_id,
+            username=user.username,
+            email=user.email,
+            hashed_password=get_password_hash(user.password),
+            created_at=now,
+            updated_at=now,
+            preferences={}
         )
-    
-    existing_username = await app.mongodb["users"].find_one({"username": user.username})
-    if existing_username:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Username already taken"
+        
+        await app.mongodb["users"].insert_one(user_in_db.dict())
+        REGISTRATIONS.labels(status="success").inc()
+        
+        # Create access token
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user_id}, expires_delta=access_token_expires
         )
-    
-    # Create new user
-    user_id = str(uuid.uuid4())
-    now = datetime.utcnow()
-    
-    user_in_db = UserInDB(
-        id=user_id,
-        username=user.username,
-        email=user.email,
-        hashed_password=get_password_hash(user.password),
-        created_at=now,
-        updated_at=now,
-        preferences={}
-    )
-    
-    await app.mongodb["users"].insert_one(user_in_db.dict())
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user_id}, expires_delta=access_token_expires
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+    except Exception as e:
+        REGISTRATIONS.labels(status="error").inc()
+        raise e
 
 @app.post("/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await authenticate_user(app.mongodb, form_data.username, form_data.password)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        user = await authenticate_user(app.mongodb, form_data.username, form_data.password)
+        if not user:
+            LOGIN_ATTEMPTS.labels(status="failed").inc()
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        LOGIN_ATTEMPTS.labels(status="success").inc()
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.id}, expires_delta=access_token_expires
         )
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.id}, expires_delta=access_token_expires
-    )
-    
-    return {"access_token": access_token, "token_type": "bearer"}
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+    except Exception as e:
+        LOGIN_ATTEMPTS.labels(status="error").inc()
+        raise e
 
 # JSON-based login endpoint for frontend
 @app.post("/login-json", response_model=Token)
