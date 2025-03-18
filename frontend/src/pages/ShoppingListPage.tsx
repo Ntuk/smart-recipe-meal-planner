@@ -222,6 +222,13 @@ const ShoppingListPage = () => {
         const response = await createShoppingList(shoppingListData);
         if (response) {
           setShoppingListId(response.id);
+          // Update the items state with the response data while preserving IDs
+          setItems(response.items.map(item => ({
+            id: items.find(existingItem => existingItem.name === item.name)?.id || uuidv4(),
+            name: item.name,
+            checked: item.checked,
+            category: categorizeIngredient(item.name)
+          })));
           toast.success(t('shoppingList.savedSuccessfully'));
         }
       } else {
@@ -275,7 +282,7 @@ const ShoppingListPage = () => {
             </div>
             
             <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-              {!isAuthenticated && <SavedLists />}
+              <SavedLists />
               
               <div className="mb-6">
                 <label htmlFor="list-name" className="block text-sm font-medium text-gray-700">
@@ -342,7 +349,7 @@ const ShoppingListPage = () => {
                       </h3>
                       <ul className="divide-y divide-gray-200 border-t border-b border-gray-200">
                         {itemsByCategory[category].map(item => (
-                          <li key={item.id} className="py-4 flex items-center justify-between">
+                          <li key={`${item.id}-${item.name}`} className="py-4 flex items-center justify-between">
                             <div className="flex items-center">
                               <input
                                 type="checkbox"
