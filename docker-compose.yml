@@ -15,6 +15,16 @@ services:
       - mongodb_data:/data/db
     networks:
       - recipe-network
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
   # MongoDB Exporter
   mongodb-exporter:
@@ -64,7 +74,8 @@ services:
       - DB_NAME=recipe_app
       - SECRET_KEY=your-secret-key-for-development
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
     networks:
       - recipe-network
 
@@ -174,11 +185,16 @@ services:
     ports:
       - "3001:80"
     depends_on:
-      - auth-service
-      - recipe-service
-      - ingredient-scanner-service
-      - meal-planning-service
-      - shopping-list-service
+      auth-service:
+        condition: service_started
+      recipe-service:
+        condition: service_started
+      ingredient-scanner-service:
+        condition: service_started
+      meal-planning-service:
+        condition: service_started
+      shopping-list-service:
+        condition: service_started
     networks:
       - recipe-network
 

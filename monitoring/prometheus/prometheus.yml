@@ -9,23 +9,23 @@ scrape_configs:
 
   - job_name: 'auth-service'
     static_configs:
-      - targets: ['auth-service:8000']
+      - targets: ['auth-service:9090']
 
   - job_name: 'recipe-service'
     static_configs:
-      - targets: ['recipe-service:8000']
+      - targets: ['recipe-service:9091']
 
   - job_name: 'ingredient-scanner-service'
     static_configs:
-      - targets: ['ingredient-scanner-service:8000']
+      - targets: ['ingredient-scanner-service:9092']
 
   - job_name: 'meal-planning-service'
     static_configs:
-      - targets: ['meal-planning-service:8000']
+      - targets: ['meal-planning-service:9093']
 
   - job_name: 'shopping-list-service'
     static_configs:
-      - targets: ['shopping-list-service:8000']
+      - targets: ['shopping-list-service:9094']
 
   - job_name: 'mongodb'
     static_configs:

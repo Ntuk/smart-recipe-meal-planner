@@ -3,6 +3,7 @@ import os
 import pika
 import logging
 import threading
+import time
 from typing import Callable, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,12 @@ class RabbitMQClient:
         self.connection = None
         self.channel = None
         self.consumer_thread = None
+        self.should_reconnect = True
+        self.reconnect_delay = 5  # seconds
+        self._consuming = False
+        self._consumer_tag = None
+        self._current_callback = None
+        self._current_queue = None
         
     def connect(self) -> bool:
         """
@@ -32,22 +39,36 @@ class RabbitMQClient:
         Returns:
             bool: True if connection was successful, False otherwise.
         """
-        try:
-            # Create a connection parameters object from the URL
-            parameters = pika.URLParameters(self.connection_url)
-            
-            # Establish connection
-            self.connection = pika.BlockingConnection(parameters)
-            
-            # Create a channel
-            self.channel = self.connection.channel()
-            
-            logger.info("Successfully connected to RabbitMQ")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to RabbitMQ: {str(e)}")
-            return False
+        while self.should_reconnect:
+            try:
+                # Create a connection parameters object from the URL
+                parameters = pika.URLParameters(self.connection_url)
+                parameters.heartbeat = 600
+                parameters.blocked_connection_timeout = 300
+                
+                # Establish connection
+                self.connection = pika.BlockingConnection(parameters)
+                
+                # Create a channel
+                self.channel = self.connection.channel()
+                
+                logger.info("Successfully connected to RabbitMQ")
+                
+                # If we were consuming before, resume consumption
+                if self._consuming and self._current_queue and self._current_callback:
+                    self.start_consuming(self._current_queue, self._current_callback)
+                
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to connect to RabbitMQ: {str(e)}")
+                if self.should_reconnect:
+                    logger.info(f"Retrying connection in {self.reconnect_delay} seconds...")
+                    time.sleep(self.reconnect_delay)
+                else:
+                    return False
+        
+        return False
     
     def close(self):
         """Close the connection to RabbitMQ."""
@@ -163,30 +184,77 @@ class RabbitMQClient:
             if not self.connect():
                 return
         
+        # Store current consumer settings
+        self._current_queue = queue_name
+        self._current_callback = callback
+        self._consuming = True
+        
         # Set up the consumer
-        self.channel.basic_consume(
-            queue=queue_name,
-            on_message_callback=callback,
-            auto_ack=auto_ack
-        )
-        
-        logger.info(f"Started consuming messages from queue '{queue_name}'")
-        
-        # Start consuming in a separate thread
-        def consume_thread():
-            try:
-                self.channel.start_consuming()
-            except Exception as e:
-                logger.error(f"Error in consumer thread: {str(e)}")
-        
-        self.consumer_thread = threading.Thread(target=consume_thread, daemon=True)
-        self.consumer_thread.start()
+        try:
+            # Cancel any existing consumer
+            if self._consumer_tag:
+                try:
+                    self.channel.basic_cancel(self._consumer_tag)
+                except Exception:
+                    pass
+            
+            # Start a new consumer
+            self._consumer_tag = self.channel.basic_consume(
+                queue=queue_name,
+                on_message_callback=callback,
+                auto_ack=auto_ack
+            )
+            
+            logger.info(f"Started consuming messages from queue '{queue_name}'")
+            
+            # Start consuming in a separate thread
+            def consume_thread():
+                try:
+                    # Only start consuming if we're not already consuming
+                    if self.channel and not self.channel.is_consuming:
+                        self.channel.start_consuming()
+                except pika.exceptions.ConnectionClosedByBroker:
+                    logger.error("Connection closed by broker")
+                except pika.exceptions.AMQPConnectionError:
+                    logger.error("Lost connection to RabbitMQ")
+                except Exception as e:
+                    logger.error(f"Error in consumer thread: {str(e)}")
+                finally:
+                    # Clean up
+                    try:
+                        if self.channel and self.channel.is_open:
+                            self.channel.stop_consuming()
+                    except Exception:
+                        pass
+                    
+                    # Try to reconnect if we should
+                    if self._consuming and self.should_reconnect:
+                        self.connect()
+            
+            # Stop any existing consumer thread
+            if self.consumer_thread and self.consumer_thread.is_alive():
+                self.consumer_thread.join(timeout=1.0)
+            
+            # Start new consumer thread
+            self.consumer_thread = threading.Thread(target=consume_thread, daemon=True)
+            self.consumer_thread.start()
+            
+        except Exception as e:
+            logger.error(f"Failed to start consuming: {str(e)}")
+            self._consuming = False
     
     def stop_consuming(self):
         """Stop consuming messages."""
-        if self.channel:
-            self.channel.stop_consuming()
-            logger.info("Stopped consuming messages")
+        self._consuming = False
+        if self.channel and self._consumer_tag:
+            try:
+                self.channel.basic_cancel(self._consumer_tag)
+            except Exception as e:
+                logger.error(f"Error canceling consumer: {str(e)}")
+        self._consumer_tag = None
+        self._current_callback = None
+        self._current_queue = None
+        logger.info("Stopped consuming messages")
     
     def setup_shopping_list_queues(self):
         """

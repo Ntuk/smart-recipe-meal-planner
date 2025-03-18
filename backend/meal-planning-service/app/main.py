@@ -19,6 +19,9 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from fastapi.responses import Response
 import time
 import nest_asyncio
+from prometheus_fastapi_instrumentator import Instrumentator
+import uvicorn
+import threading
 
 # Prometheus metrics
 REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
@@ -36,6 +39,9 @@ load_dotenv()
 # Initialize FastAPI app
 app = FastAPI(title="Meal Planning Service API", description="API for planning meals based on ingredients and preferences")
 
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(app)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -46,11 +52,11 @@ app.add_middleware(
 )
 
 # MongoDB connection
-MONGODB_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGODB_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
 DATABASE_NAME = os.getenv("DB_NAME", "recipe_db")
-RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://localhost:8001")
-RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
+RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://recipe-service:8000")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
 # Initialize RabbitMQ client
 rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
@@ -145,11 +151,25 @@ class MealPlanResponse(BaseModel):
 @app.on_event("startup")
 async def startup_db_client():
     try:
-        app.mongodb_client = AsyncIOMotorClient(MONGODB_URI)
+        # Configure MongoDB client with optimized settings
+        app.mongodb_client = AsyncIOMotorClient(
+            MONGODB_URI,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=2000,
+            serverSelectionTimeoutMS=2000,
+            heartbeatFrequencyMS=10000,
+            retryWrites=True,
+            w='majority',
+            readPreference='secondaryPreferred'
+        )
+        
         app.mongodb = app.mongodb_client[DATABASE_NAME]
+        
         # Ping the database to check the connection
         await app.mongodb_client.admin.command('ping')
-        logger.info("Connected to MongoDB")
+        logger.info("Connected to MongoDB with optimized settings")
         
         # Setup RabbitMQ
         if rabbitmq_client.connect():
@@ -571,125 +591,71 @@ def process_detected_ingredients(ch, method, properties, body):
         
         logger.info(f"Processing {len(ingredient_names)} ingredients for user {user_id}: {ingredient_names}")
         
-        # Run the async function in a new event loop
-        nest_asyncio.apply()
-        
-        # Create a new event loop and run the coroutine
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(process_ingredients_async(user_id, scan_id, ingredient_names, token))
-        finally:
-            loop.close()
-        
-    except Exception as e:
-        logger.error(f"Error processing message: {str(e)}")
-        import traceback
-        logger.error(f"Detailed error: {traceback.format_exc()}")
-
-async def process_ingredients_async(user_id, scan_id, ingredient_names, token):
-    """
-    Process ingredients asynchronously.
-    This function is called from the RabbitMQ callback to process ingredients.
-    
-    Args:
-        user_id: User ID
-        scan_id: Scan ID
-        ingredient_names: List of ingredient names
-        token: User's authentication token
-    """
-    try:
-        logger.info(f"Processing ingredients asynchronously for user {user_id}, scan {scan_id}")
-        logger.info(f"Ingredients: {ingredient_names}")
-        logger.info(f"Token available: {bool(token)}")
-        
-        # Fetch recipes that match the ingredients
-        try:
-            logger.info(f"Attempting to fetch recipes with ingredients: {ingredient_names}")
-            recipes = await fetch_recipes(ingredients=ingredient_names, token=token)
-            logger.info(f"Fetch recipes result: {recipes and len(recipes) or 0} recipes found")
-            if recipes:
-                logger.info(f"Found recipes: {[recipe.get('name', 'Unknown') for recipe in recipes]}")
-        except Exception as fetch_error:
-            logger.error(f"Error fetching recipes: {str(fetch_error)}")
-            import traceback
-            logger.error(f"Detailed fetch error: {traceback.format_exc()}")
-            recipes = []
-        
-        if not recipes:
-            logger.warning(f"No recipes found for ingredients: {ingredient_names}")
-            # Store the empty suggestions anyway so we can see the attempt
-            suggestion = {
-                "user_id": user_id,
-                "scan_id": scan_id,
-                "ingredients": ingredient_names,
-                "suggested_recipes": [],
-                "created_at": datetime.utcnow(),
-                "error": "No recipes found for the provided ingredients"
-            }
-            
-            db = app.mongodb
-            try:
-                logger.info(f"Storing empty suggestion record for user {user_id}")
-                await db.recipe_suggestions.insert_one(suggestion)
-                logger.info(f"Successfully stored empty suggestion record for user {user_id}")
-            except Exception as db_error:
-                logger.error(f"Error storing empty suggestion: {str(db_error)}")
-                import traceback
-                logger.error(f"Detailed DB error: {traceback.format_exc()}")
-            
-            return
-        
-        logger.info(f"Found {len(recipes)} recipes matching ingredients")
-        
-        # Store the suggested recipes in the database
+        # Store the ingredients in the database
         suggestion = {
             "user_id": user_id,
             "scan_id": scan_id,
             "ingredients": ingredient_names,
-            "suggested_recipes": recipes,
+            "suggested_recipes": [],
             "created_at": datetime.utcnow()
         }
         
-        db = app.mongodb
-        try:
-            logger.info(f"Storing suggestion with recipes for user {user_id}")
-            result = await db.recipe_suggestions.insert_one(suggestion)
-            suggestion_id = str(result.inserted_id)
-            logger.info(f"Successfully stored suggestion with ID: {suggestion_id}")
-        except Exception as db_error:
-            logger.error(f"Error storing suggestion: {str(db_error)}")
-            import traceback
-            logger.error(f"Detailed DB error: {traceback.format_exc()}")
-            return
+        # Use httpx to make synchronous HTTP requests
+        with httpx.Client() as client:
+            try:
+                # Fetch recipes that match the ingredients
+                response = client.get(
+                    f"{RECIPE_SERVICE_URL}/recipes/search",
+                    params={"ingredients": ingredient_names},
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                
+                if response.status_code == 200:
+                    recipes = response.json()
+                    suggestion["suggested_recipes"] = recipes
+                    logger.info(f"Found {len(recipes)} recipes matching ingredients")
+                else:
+                    logger.warning(f"Failed to fetch recipes: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.error(f"Error fetching recipes: {str(e)}")
         
-        # Publish a message to notify that recipes have been suggested
-        try:
-            message = {
-                "user_id": user_id,
-                "scan_id": scan_id,
-                "suggestion_id": suggestion_id,
-                "ingredient_count": len(ingredient_names),
-                "recipe_count": len(recipes),
-                "timestamp": datetime.utcnow().isoformat()
-            }
-            
-            logger.info(f"Publishing suggestion notification: {message}")
-            publish_result = rabbitmq_client.publish_message(
-                exchange_name="meal_plans",
-                routing_key="recipe.suggestion",
-                message=message
-            )
-            logger.info(f"Published message result: {publish_result}")
-        except Exception as publish_error:
-            logger.error(f"Error publishing suggestion notification: {str(publish_error)}")
-            import traceback
-            logger.error(f"Detailed publish error: {traceback.format_exc()}")
-        
-        logger.info(f"Successfully processed ingredients and suggested recipes for user {user_id}")
+        # Store the suggestion in MongoDB
+        with httpx.Client() as client:
+            try:
+                response = client.post(
+                    f"{RECIPE_SERVICE_URL}/suggestions",
+                    json=suggestion,
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                
+                if response.status_code == 200:
+                    suggestion_id = response.json().get("id")
+                    logger.info(f"Successfully stored suggestion with ID: {suggestion_id}")
+                    
+                    # Publish a message to notify that recipes have been suggested
+                    message = {
+                        "user_id": user_id,
+                        "scan_id": scan_id,
+                        "suggestion_id": suggestion_id,
+                        "ingredient_count": len(ingredient_names),
+                        "recipe_count": len(suggestion["suggested_recipes"]),
+                        "timestamp": datetime.utcnow().isoformat()
+                    }
+                    
+                    logger.info(f"Publishing suggestion notification: {message}")
+                    publish_result = rabbitmq_client.publish_message(
+                        exchange_name="meal_plans",
+                        routing_key="recipe.suggestion",
+                        message=message
+                    )
+                    logger.info(f"Published message result: {publish_result}")
+                else:
+                    logger.warning(f"Failed to store suggestion: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.error(f"Error storing suggestion: {str(e)}")
         
     except Exception as e:
-        logger.error(f"Unexpected error in process_ingredients_async: {str(e)}")
+        logger.error(f"Error processing message: {str(e)}")
         import traceback
         logger.error(f"Detailed error: {traceback.format_exc()}")
 

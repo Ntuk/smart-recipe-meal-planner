@@ -24,6 +24,7 @@ class RabbitMQClient:
         self.connection = None
         self.channel = None
         self.consumer_thread = None
+        self._consuming = False
         
     def connect(self) -> bool:
         """
@@ -51,9 +52,14 @@ class RabbitMQClient:
     
     def close(self):
         """Close the connection to RabbitMQ."""
-        if self.connection and self.connection.is_open:
-            self.connection.close()
+        try:
+            if self.channel and self.channel.is_open:
+                self.channel.close()
+            if self.connection and self.connection.is_open:
+                self.connection.close()
             logger.info("RabbitMQ connection closed")
+        except Exception as e:
+            logger.error(f"Error closing RabbitMQ connection: {str(e)}")
     
     def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
         """
@@ -175,18 +181,37 @@ class RabbitMQClient:
         # Start consuming in a separate thread
         def consume_thread():
             try:
-                self.channel.start_consuming()
+                self._consuming = True
+                while self._consuming:
+                    try:
+                        self.connection.process_data_events(time_limit=1)  # Process events for 1 second
+                    except Exception as e:
+                        logger.error(f"Error processing events: {str(e)}")
+                        if not self._consuming:
+                            break
+                        # Try to reconnect
+                        if not self.connect():
+                            break
             except Exception as e:
                 logger.error(f"Error in consumer thread: {str(e)}")
+            finally:
+                self._consuming = False
         
         self.consumer_thread = threading.Thread(target=consume_thread, daemon=True)
         self.consumer_thread.start()
     
     def stop_consuming(self):
         """Stop consuming messages."""
+        self._consuming = False
         if self.channel:
-            self.channel.stop_consuming()
+            try:
+                self.channel.stop_consuming()
+            except Exception as e:
+                logger.error(f"Error stopping consumer: {str(e)}")
             logger.info("Stopped consuming messages")
+        
+        if self.consumer_thread and self.consumer_thread.is_alive():
+            self.consumer_thread.join(timeout=5)
     
     def setup_meal_planning_queues(self):
         """

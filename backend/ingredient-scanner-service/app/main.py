@@ -19,6 +19,9 @@ from .rabbitmq_utils import RabbitMQClient
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import uvicorn
+import threading
 
 # Prometheus metrics
 REQUESTS = Counter('ingredient_scanner_service_requests_total', 'Total requests to the ingredient scanner service', ['method', 'endpoint', 'status'])
@@ -34,13 +37,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
-RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
 
 # Initialize FastAPI app
 app = FastAPI(title="Ingredient Scanner Service", description="Service for scanning and extracting ingredients from images")
+
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # Request monitoring middleware
 @app.middleware("http")
@@ -84,17 +90,39 @@ app.add_middleware(
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
-    app.mongodb = app.mongodb_client[DB_NAME]
-    
-    # Setup RabbitMQ exchanges and queues
-    if rabbitmq_client.connect():
-        rabbitmq_client.setup_ingredient_scanner_queues()
-    else:
-        logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
-
-    # Create indexes for scans collection
-    await app.mongodb["scans"].create_index("user_id")
+    try:
+        # Configure MongoDB client with optimized settings
+        app.mongodb_client = AsyncIOMotorClient(
+            MONGO_URI,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=2000,
+            serverSelectionTimeoutMS=2000,
+            heartbeatFrequencyMS=10000,
+            retryWrites=True,
+            w='majority',
+            readPreference='secondaryPreferred'
+        )
+        
+        app.mongodb = app.mongodb_client[DB_NAME]
+        
+        # Ping the database to check the connection
+        await app.mongodb_client.admin.command('ping')
+        logger.info("Connected to MongoDB with optimized settings")
+        
+        # Create indexes for scanned ingredients collection
+        await app.mongodb["scanned_ingredients"].create_index("user_id")
+        await app.mongodb["scanned_ingredients"].create_index("scanned_at")
+        
+        # Setup RabbitMQ exchanges and queues
+        if rabbitmq_client.connect():
+            rabbitmq_client.setup_ingredient_scanner_queues()
+        else:
+            logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
+    except Exception as e:
+        logger.error(f"Could not connect to MongoDB: {e}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
@@ -273,18 +301,50 @@ def extract_ingredients_from_text(text):
             unit=None
         )]
     
+    # Words to filter out (common OCR errors, website URLs, headers, etc.)
+    filter_words = [
+        "for the", "recipe", "ingredients", "method", "instructions", 
+        "directions", "steps", ".com", "www.", "http", "copyright",
+        "all rights reserved", "preparation", "cooking time", "serves",
+        "yield", "notes", "tips", "source", "author", "published"
+    ]
+    
     # Process each valid line
     for line in valid_lines:
-        # Skip common non-ingredients
-        if line.lower() in ["ingredients", "method", "instructions", "directions", "steps", "recipe"]:
+        line = line.strip()
+        
+        # Skip if line contains any filter words
+        if any(word.lower() in line.lower() for word in filter_words):
             continue
             
-        # Add as an ingredient
-        ingredients.append(IngredientItem(
-            name=line.strip().title(),
-            quantity=None,
-            unit=None
-        ))
+        # Skip if line looks like a URL or email
+        if re.search(r'[.@]', line) or re.search(r'www|http|\.com', line.lower()):
+            continue
+            
+        # Skip if line is too long (likely a sentence, not an ingredient)
+        if len(line.split()) > 5:
+            continue
+            
+        # Skip if line contains too many numbers (likely a measurement or step number)
+        if len(re.findall(r'\d', line)) > 3:
+            continue
+            
+        # Skip if line is just punctuation or special characters
+        if not re.search(r'[a-zA-Z]', line):
+            continue
+            
+        # Clean up the ingredient name
+        ingredient_name = line.strip()
+        ingredient_name = re.sub(r'^[-•*+]+\s*', '', ingredient_name)  # Remove bullet points
+        ingredient_name = ingredient_name.strip()
+        
+        # Add as an ingredient if it's not empty after cleaning
+        if ingredient_name:
+            ingredients.append(IngredientItem(
+                name=ingredient_name.strip().title(),
+                quantity=None,
+                unit=None
+            ))
     
     # If we still have no ingredients, suggest manual input
     if not ingredients:
@@ -403,51 +463,102 @@ def detect_common_foods_in_image(image, all_text=""):
 async def scan_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
     """Scan an image to extract ingredients."""
     try:
-        # Start OCR timing
-        ocr_start_time = time.time()
+        logger.info(f"Received scan request from user {current_user['id']}")
+        logger.info(f"File content type: {file.content_type}")
         
         # Process image and extract text
         contents = await file.read()
-        image = Image.open(io.BytesIO(contents))
+        logger.info(f"Read {len(contents)} bytes from uploaded file")
+        
+        try:
+            image = Image.open(io.BytesIO(contents))
+            logger.info(f"Opened image with size: {image.size} and mode: {image.mode}")
+        except Exception as e:
+            logger.error(f"Error opening image: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid image format"
+            )
         
         # Enhance image for better OCR
-        image = image.convert('L')  # Convert to grayscale
-        image = image.filter(ImageFilter.SHARPEN)
-        enhancer = ImageEnhance.Contrast(image)
-        image = enhancer.enhance(2.0)
+        try:
+            image = image.convert('L')  # Convert to grayscale
+            logger.info("Converted image to grayscale")
+            image = image.filter(ImageFilter.SHARPEN)
+            logger.info("Applied sharpening filter")
+            enhancer = ImageEnhance.Contrast(image)
+            image = enhancer.enhance(2.0)
+            logger.info("Enhanced image contrast")
+        except Exception as e:
+            logger.error(f"Error enhancing image: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error processing image"
+            )
         
         # Perform OCR
-        text = pytesseract.image_to_string(image)
-        
-        # Record OCR duration
-        OCR_LATENCY.observe(time.time() - ocr_start_time)
+        try:
+            text = pytesseract.image_to_string(image)
+            logger.info(f"OCR extracted text: {text[:100]}...")  # Log first 100 chars
+        except Exception as e:
+            logger.error(f"Error performing OCR: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error performing OCR"
+            )
         
         # Extract ingredients from text
-        ingredients = extract_ingredients_from_text(text)
+        try:
+            ingredients = extract_ingredients_from_text(text)
+            logger.info(f"Extracted {len(ingredients)} ingredients")
+            for i, ingredient in enumerate(ingredients):
+                logger.info(f"Ingredient {i+1}: {ingredient.name}")
+        except Exception as e:
+            logger.error(f"Error extracting ingredients: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error extracting ingredients"
+            )
         
         # Store scan result
-        scan_id = str(uuid.uuid4())
-        scan_result = {
-            "scan_id": scan_id,
-            "user_id": current_user["id"],
-            "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "created_at": datetime.utcnow()
-        }
-        
-        await app.mongodb["scans"].insert_one(scan_result)
+        try:
+            scan_id = str(uuid.uuid4())
+            scan_result = {
+                "scan_id": scan_id,
+                "user_id": current_user["id"],
+                "ingredients": [ingredient.dict() for ingredient in ingredients],
+                "created_at": datetime.utcnow()
+            }
+            
+            await app.mongodb["scans"].insert_one(scan_result)
+            logger.info(f"Stored scan result in MongoDB with ID: {scan_id}")
+        except Exception as e:
+            logger.error(f"Error storing scan result: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error storing scan result"
+            )
         
         # Publish to RabbitMQ for async processing
-        if rabbitmq_client.is_connected():
-            rabbitmq_client.publish_scan_result(scan_result)
+        try:
+            if rabbitmq_client.is_connected():
+                rabbitmq_client.publish_scan_result(scan_result)
+                logger.info("Published scan result to RabbitMQ")
+            else:
+                logger.warning("RabbitMQ not connected, skipping message publish")
+        except Exception as e:
+            logger.error(f"Error publishing to RabbitMQ: {str(e)}")
+            # Don't raise an exception here, as this is not critical for the main functionality
         
         SCAN_OPERATIONS.labels(operation="scan", status="success").inc()
         return scan_result
     except Exception as e:
         SCAN_OPERATIONS.labels(operation="scan", status="error").inc()
         logger.error(f"Error processing scan: {str(e)}")
+        logger.exception("Detailed exception information:")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing image"
+            detail=str(e)
         )
 
 @app.post("/manual-input", response_model=ScanResult)
@@ -586,4 +697,27 @@ async def delete_scan(scan_id: str, current_user: dict = Depends(get_current_use
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"} 
+    return {"status": "healthy"}
+
+@app.post("/test-upload")
+async def test_upload(file: UploadFile = File(...)):
+    """Test endpoint for file upload."""
+    try:
+        logger.info(f"Received test upload request")
+        logger.info(f"File content type: {file.content_type}")
+        
+        contents = await file.read()
+        logger.info(f"Read {len(contents)} bytes from uploaded file")
+        
+        return {
+            "message": "File uploaded successfully",
+            "content_type": file.content_type,
+            "size": len(contents)
+        }
+    except Exception as e:
+        logger.error(f"Error in test upload: {str(e)}")
+        logger.exception("Detailed exception information:")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error processing file upload"
+        ) 

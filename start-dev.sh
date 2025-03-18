@@ -49,7 +49,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8004 &
 
 echo "Starting Frontend..."
 cd $ROOT_DIR/frontend
-npm start &
+npm run dev &
 
 # Start monitoring services if --monitor flag is set
 if [ "$MONITOR" = true ]; then

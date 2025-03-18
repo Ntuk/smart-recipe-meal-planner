@@ -12,6 +12,21 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import uvicorn
+import threading
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
+
+# Port Configuration
+PORT = int(os.getenv("PORT", "8000"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
 
 # Prometheus metrics
 REQUESTS = Counter('recipe_service_requests_total', 'Total requests to the recipe service', ['method', 'endpoint', 'status'])
@@ -19,16 +34,19 @@ REQUEST_LATENCY = Histogram('recipe_service_request_duration_seconds', 'Request 
 RECIPE_OPERATIONS = Counter('recipe_service_operations_total', 'Total recipe operations', ['operation', 'status'])
 RECIPE_SEARCH = Counter('recipe_service_searches_total', 'Total recipe searches', ['filter_type'])
 
-# Load environment variables
-load_dotenv()
-
 # MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
 # Initialize FastAPI app
 app = FastAPI(title="Recipe Service", description="Recipe management service for Smart Recipe & Meal Planner")
+
+# Initialize metrics app
+metrics_app = FastAPI()
+
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(metrics_app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -46,22 +64,24 @@ async def monitor_requests(request, call_next):
     response = await call_next(request)
     duration = time.time() - start_time
     
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
     REQUESTS.labels(
         method=request.method,
         endpoint=request.url.path,
         status=response.status_code
     ).inc()
     
-    REQUEST_LATENCY.labels(
-        method=request.method,
-        endpoint=request.url.path
-    ).observe(duration)
-    
     return response
 
-@app.get("/metrics")
-def metrics():
-    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+# Start metrics server in a separate thread
+def run_metrics_server():
+    uvicorn.run(metrics_app, host="0.0.0.0", port=METRICS_PORT)
+
+threading.Thread(target=run_metrics_server, daemon=True).start()
 
 # Security
 security = HTTPBearer()
@@ -69,13 +89,34 @@ security = HTTPBearer()
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
-    app.mongodb = app.mongodb_client[DB_NAME]
-    
-    # Create indexes for recipes collection
-    await app.mongodb["recipes"].create_index("name")
-    await app.mongodb["recipes"].create_index("tags")
-    await app.mongodb["recipes"].create_index("cuisine")
+    try:
+        # Configure MongoDB client with optimized settings
+        app.mongodb_client = AsyncIOMotorClient(
+            MONGO_URI,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=2000,
+            serverSelectionTimeoutMS=2000,
+            heartbeatFrequencyMS=10000,
+            retryWrites=True,
+            w='majority',
+            readPreference='secondaryPreferred'
+        )
+        
+        app.mongodb = app.mongodb_client[DB_NAME]
+        
+        # Ping the database to check the connection
+        await app.mongodb_client.admin.command('ping')
+        logger.info("Connected to MongoDB with optimized settings")
+        
+        # Create indexes for recipes collection
+        await app.mongodb["recipes"].create_index("name")
+        await app.mongodb["recipes"].create_index("tags")
+        await app.mongodb["recipes"].create_index("cuisine")
+    except Exception as e:
+        logger.error(f"Could not connect to MongoDB: {e}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

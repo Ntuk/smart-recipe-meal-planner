@@ -13,6 +13,11 @@ import uuid
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Prometheus metrics
 REQUESTS = Counter('auth_service_requests_total', 'Total requests to the auth service', ['method', 'endpoint', 'status'])
@@ -29,7 +34,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 # MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
 
 # Password hashing
@@ -54,12 +59,33 @@ app.add_middleware(
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
-    app.mongodb = app.mongodb_client[DB_NAME]
-    
-    # Create indexes for users collection
-    await app.mongodb["users"].create_index("email", unique=True)
-    await app.mongodb["users"].create_index("username", unique=True)
+    try:
+        # Configure MongoDB client with optimized settings
+        app.mongodb_client = AsyncIOMotorClient(
+            MONGO_URI,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=2000,
+            serverSelectionTimeoutMS=2000,
+            heartbeatFrequencyMS=10000,
+            retryWrites=True,
+            w='majority',
+            readPreference='secondaryPreferred'
+        )
+        
+        app.mongodb = app.mongodb_client[DB_NAME]
+        
+        # Ping the database to check the connection
+        await app.mongodb_client.admin.command('ping')
+        logger.info("Connected to MongoDB with optimized settings")
+        
+        # Create indexes for users collection
+        await app.mongodb["users"].create_index("email", unique=True)
+        await app.mongodb["users"].create_index("username", unique=True)
+    except Exception as e:
+        logger.error(f"Could not connect to MongoDB: {e}")
+        raise
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

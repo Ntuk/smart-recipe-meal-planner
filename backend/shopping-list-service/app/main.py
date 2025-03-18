@@ -16,6 +16,9 @@ from .rabbitmq_utils import RabbitMQClient
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import uvicorn
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -25,20 +28,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@localhost:27017")
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
 DB_NAME = os.getenv("DB_NAME", "recipe_app")
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
-MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://localhost:8003")
-RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://meal-planning-service:8000")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
 
 # Prometheus metrics
 REQUESTS = Counter('shopping_list_service_requests_total', 'Total requests to the shopping list service', ['method', 'endpoint', 'status'])
 REQUEST_LATENCY = Histogram('shopping_list_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
-SHOPPING_LIST_OPERATIONS = Counter('shopping_list_service_operations_total', 'Total shopping list operations', ['operation', 'status'])
+LIST_OPERATIONS = Counter('shopping_list_service_operations_total', 'Total shopping list operations', ['operation', 'status'])
 MEAL_PLAN_SERVICE_LATENCY = Histogram('shopping_list_service_meal_plan_service_duration_seconds', 'Meal plan service request latency in seconds', ['operation'])
 
 # Initialize FastAPI app
 app = FastAPI(title="Shopping List Service", description="Service for managing shopping lists")
+
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # Security
 security = HTTPBearer()
@@ -82,34 +88,71 @@ def metrics():
 # Database connection
 @app.on_event("startup")
 async def startup_db_client():
-    app.mongodb_client = AsyncIOMotorClient(MONGO_URI)
-    app.mongodb = app.mongodb_client[DB_NAME]
-    
-    # Create indexes for shopping lists collection
-    await app.mongodb["shopping_lists"].create_index("user_id")
-    await app.mongodb["shopping_lists"].create_index("meal_plan_id")
-    
-    # Setup RabbitMQ
-    if rabbitmq_client.connect():
-        rabbitmq_client.setup_shopping_list_queues()
-        
-        # Start consuming messages from the meal_plans_created queue
-        rabbitmq_client.start_consuming(
-            queue_name="meal_plans_created",
-            callback=process_meal_plan_created
+    try:
+        # Configure MongoDB client with optimized settings
+        app.mongodb_client = AsyncIOMotorClient(
+            MONGO_URI,
+            maxPoolSize=50,
+            minPoolSize=10,
+            maxIdleTimeMS=45000,
+            connectTimeoutMS=2000,
+            serverSelectionTimeoutMS=2000,
+            heartbeatFrequencyMS=10000,
+            retryWrites=True,
+            w='majority',
+            readPreference='secondaryPreferred'
         )
         
-        logger.info("Started consuming messages from RabbitMQ")
-    else:
-        logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
+        app.mongodb = app.mongodb_client[DB_NAME]
+        
+        # Ping the database to check the connection
+        await app.mongodb_client.admin.command('ping')
+        logger.info("Successfully connected to MongoDB with optimized settings")
+        
+        # Create indexes for shopping lists collection
+        await app.mongodb["shopping_lists"].create_index("user_id")
+        await app.mongodb["shopping_lists"].create_index("meal_plan_id")
+        
+        # Setup RabbitMQ with retries
+        max_retries = 5
+        retry_count = 0
+        while retry_count < max_retries:
+            if rabbitmq_client.connect():
+                rabbitmq_client.setup_shopping_list_queues()
+                
+                # Start consuming messages from the meal_plans_created queue
+                rabbitmq_client.start_consuming(
+                    queue_name="meal_plans_created",
+                    callback=process_meal_plan_created
+                )
+                
+                logger.info("Started consuming messages from RabbitMQ")
+                break
+            else:
+                retry_count += 1
+                if retry_count < max_retries:
+                    logger.warning(f"Failed to connect to RabbitMQ. Retrying in 5 seconds... (Attempt {retry_count}/{max_retries})")
+                    await asyncio.sleep(5)
+                else:
+                    logger.error("Failed to connect to RabbitMQ after maximum retries")
+    except Exception as e:
+        logger.error(f"Error during startup: {str(e)}")
+        raise e
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    app.mongodb_client.close()
-    
-    # Stop consuming messages and close RabbitMQ connection
-    rabbitmq_client.stop_consuming()
-    rabbitmq_client.close()
+    try:
+        if hasattr(app, 'mongodb_client'):
+            app.mongodb_client.close()
+            logger.info("Closed MongoDB connection")
+        
+        # Stop consuming messages and close RabbitMQ connection
+        rabbitmq_client.should_reconnect = False  # Prevent reconnection attempts during shutdown
+        rabbitmq_client.stop_consuming()
+        rabbitmq_client.close()
+        logger.info("Closed RabbitMQ connection")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {str(e)}")
 
 # Models
 class ShoppingListItem(BaseModel):
@@ -308,39 +351,77 @@ async def create_shopping_list(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        now = datetime.utcnow()
-        shopping_list_id = str(uuid.uuid4())
+        # Create a new shopping list document
+        shopping_list_data = shopping_list.dict()
         
-        shopping_list_data = {
-            "id": shopping_list_id,
+        # Ensure items are properly formatted
+        formatted_items = []
+        for item in shopping_list_data.get("items", []):
+            if isinstance(item, str):
+                formatted_items.append({
+                    "name": item,
+                    "quantity": None,
+                    "unit": None,
+                    "checked": False
+                })
+            elif isinstance(item, dict):
+                formatted_items.append({
+                    "name": item.get("name", ""),
+                    "quantity": item.get("quantity"),
+                    "unit": item.get("unit"),
+                    "checked": item.get("checked", False)
+                })
+        
+        shopping_list_data["items"] = formatted_items
+        shopping_list_data.update({
+            "id": str(uuid.uuid4()),
             "user_id": current_user["id"],
-            "name": shopping_list.name,
-            "items": [item.dict() for item in shopping_list.items],
-            "meal_plan_id": shopping_list.meal_plan_id,
-            "notes": shopping_list.notes,
-            "created_at": now,
-            "updated_at": now
-        }
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        })
         
+        # Insert the shopping list into the database
         await app.mongodb["shopping_lists"].insert_one(shopping_list_data)
-        SHOPPING_LIST_OPERATIONS.labels(operation="create", status="success").inc()
+        logger.info(f"Created shopping list with ID: {shopping_list_data['id']}")
+        
+        # Publish event to RabbitMQ in a separate thread to avoid event loop issues
+        def publish_event():
+            try:
+                event_data = {
+                    "shopping_list_id": shopping_list_data["id"],
+                    "user_id": current_user["id"],
+                    "event_type": "created"
+                }
+                
+                if not rabbitmq_client.publish_message(
+                    exchange_name="shopping_lists",
+                    routing_key="shopping_list.created",
+                    message=event_data
+                ):
+                    logger.warning("Failed to publish shopping list created event")
+            except Exception as e:
+                logger.error(f"Error publishing event: {str(e)}")
+        
+        # Run the RabbitMQ publish in a thread
+        threading.Thread(target=publish_event, daemon=True).start()
+        
         return shopping_list_data
+        
     except Exception as e:
-        SHOPPING_LIST_OPERATIONS.labels(operation="create", status="error").inc()
         logger.error(f"Error creating shopping list: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error creating shopping list"
+            detail=f"Error creating shopping list: {str(e)}"
         )
 
 @app.get("/shopping-lists", response_model=List[ShoppingList])
 async def get_shopping_lists(current_user: dict = Depends(get_current_user)):
     try:
         shopping_lists = await app.mongodb["shopping_lists"].find({"user_id": current_user["id"]}).to_list(length=None)
-        SHOPPING_LIST_OPERATIONS.labels(operation="list", status="success").inc()
+        LIST_OPERATIONS.labels(operation="list", status="success").inc()
         return shopping_lists
     except Exception as e:
-        SHOPPING_LIST_OPERATIONS.labels(operation="list", status="error").inc()
+        LIST_OPERATIONS.labels(operation="list", status="error").inc()
         logger.error(f"Error fetching shopping lists: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -356,17 +437,17 @@ async def get_shopping_list(shopping_list_id: str, current_user: dict = Depends(
         })
         
         if not shopping_list:
-            SHOPPING_LIST_OPERATIONS.labels(operation="get", status="not_found").inc()
+            LIST_OPERATIONS.labels(operation="get", status="not_found").inc()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Shopping list {shopping_list_id} not found"
             )
         
-        SHOPPING_LIST_OPERATIONS.labels(operation="get", status="success").inc()
+        LIST_OPERATIONS.labels(operation="get", status="success").inc()
         return shopping_list
     except Exception as e:
         if not isinstance(e, HTTPException):
-            SHOPPING_LIST_OPERATIONS.labels(operation="get", status="error").inc()
+            LIST_OPERATIONS.labels(operation="get", status="error").inc()
         raise e
 
 @app.put("/shopping-lists/{shopping_list_id}", response_model=ShoppingList)
@@ -383,7 +464,7 @@ async def update_shopping_list(
         })
         
         if not shopping_list:
-            SHOPPING_LIST_OPERATIONS.labels(operation="update", status="not_found").inc()
+            LIST_OPERATIONS.labels(operation="update", status="not_found").inc()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Shopping list {shopping_list_id} not found"
@@ -402,11 +483,11 @@ async def update_shopping_list(
         )
         
         updated_shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id})
-        SHOPPING_LIST_OPERATIONS.labels(operation="update", status="success").inc()
+        LIST_OPERATIONS.labels(operation="update", status="success").inc()
         return updated_shopping_list
     except Exception as e:
         if not isinstance(e, HTTPException):
-            SHOPPING_LIST_OPERATIONS.labels(operation="update", status="error").inc()
+            LIST_OPERATIONS.labels(operation="update", status="error").inc()
         raise e
 
 @app.put("/shopping-lists/{shopping_list_id}/items/{item_name}/check", response_model=ShoppingList)
@@ -424,7 +505,7 @@ async def check_item(
         })
         
         if not shopping_list:
-            SHOPPING_LIST_OPERATIONS.labels(operation="check_item", status="not_found").inc()
+            LIST_OPERATIONS.labels(operation="check_item", status="not_found").inc()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Shopping list {shopping_list_id} not found"
@@ -439,7 +520,7 @@ async def check_item(
                 break
         
         if not item_found:
-            SHOPPING_LIST_OPERATIONS.labels(operation="check_item", status="item_not_found").inc()
+            LIST_OPERATIONS.labels(operation="check_item", status="item_not_found").inc()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Item {item_name} not found in shopping list"
@@ -457,11 +538,11 @@ async def check_item(
         )
         
         updated_shopping_list = await app.mongodb["shopping_lists"].find_one({"id": shopping_list_id})
-        SHOPPING_LIST_OPERATIONS.labels(operation="check_item", status="success").inc()
+        LIST_OPERATIONS.labels(operation="check_item", status="success").inc()
         return updated_shopping_list
     except Exception as e:
         if not isinstance(e, HTTPException):
-            SHOPPING_LIST_OPERATIONS.labels(operation="check_item", status="error").inc()
+            LIST_OPERATIONS.labels(operation="check_item", status="error").inc()
         raise e
 
 @app.delete("/shopping-lists/{shopping_list_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -474,7 +555,7 @@ async def delete_shopping_list(shopping_list_id: str, current_user: dict = Depen
         })
         
         if not shopping_list:
-            SHOPPING_LIST_OPERATIONS.labels(operation="delete", status="not_found").inc()
+            LIST_OPERATIONS.labels(operation="delete", status="not_found").inc()
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Shopping list {shopping_list_id} not found"
@@ -482,12 +563,20 @@ async def delete_shopping_list(shopping_list_id: str, current_user: dict = Depen
         
         # Delete shopping list
         await app.mongodb["shopping_lists"].delete_one({"id": shopping_list_id})
-        SHOPPING_LIST_OPERATIONS.labels(operation="delete", status="success").inc()
+        LIST_OPERATIONS.labels(operation="delete", status="success").inc()
     except Exception as e:
         if not isinstance(e, HTTPException):
-            SHOPPING_LIST_OPERATIONS.labels(operation="delete", status="error").inc()
+            LIST_OPERATIONS.labels(operation="delete", status="error").inc()
         raise e
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"} 
+    return {"status": "healthy"}
+
+@app.on_event("startup")
+async def startup():
+    # Start metrics server in a separate thread
+    def run_metrics_server():
+        uvicorn.run(app, host="0.0.0.0", port=9102)
+
+    threading.Thread(target=run_metrics_server, daemon=True).start() 
