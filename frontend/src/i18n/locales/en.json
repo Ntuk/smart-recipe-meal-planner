@@ -140,7 +140,19 @@
     "generatePlan": "Generate Plan",
     "day": "Day",
     "missing": "missing",
-    "missingIngredientsDescription": "These ingredients are needed for your meal plan but aren't in your available ingredients."
+    "missingIngredientsDescription": "These ingredients are needed for your meal plan but aren't in your available ingredients.",
+    "planSettings": "Plan Settings",
+    "dietaryPreferences": "Dietary Preferences",
+    "availableIngredients": "Available Ingredients",
+    "dietaryOptions": {
+      "vegetarian": "Vegetarian",
+      "vegan": "Vegan",
+      "glutenFree": "Gluten-Free",
+      "dairyFree": "Dairy-Free",
+      "keto": "Keto",
+      "lowCarb": "Low-Carb",
+      "paleo": "Paleo"
+    }
   },
   "categories": {
     "produce": "Produce",
