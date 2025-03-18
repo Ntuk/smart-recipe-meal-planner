@@ -72,7 +72,7 @@ export const authApiService = {
   
   // Login user
   login: async (credentials: { email: string; password: string }) => {
-    const response = await authApi.post('/login-json', {
+    const response = await authApi.post('/login', {
       username: credentials.email,
       password: credentials.password
     });

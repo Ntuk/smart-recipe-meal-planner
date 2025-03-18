@@ -20,7 +20,7 @@ class RabbitMQClient:
         Args:
             connection_url: The RabbitMQ connection URL. If not provided, it will be read from environment variable.
         """
-        self.connection_url = connection_url or os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
+        self.connection_url = connection_url or os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
         self.connection = None
         self.channel = None
         self.consumer_thread = None
