@@ -212,23 +212,34 @@ git clone https://github.com/yourusername/smart-recipe-meal-planner.git
 cd smart-recipe-meal-planner
 ```
 
-2. Start the services
+2. Make the development script executable
 ```bash
-# Start without monitoring
-docker compose up -d
-
-# Start with monitoring (includes Prometheus and Grafana)
-docker compose up -d
+chmod +x start-dev.sh
 ```
 
-3. Access the application
+3. Start the services
+```bash
+# Start without monitoring
+./start-dev.sh
+
+# Start with monitoring (includes Prometheus and Grafana)
+./start-dev.sh --monitor
+```
+
+The script will:
+- Check all required dependencies
+- Install Python and Node.js dependencies
+- Start all services in the correct order
+- Show you all available endpoints
+
+4. Access the application
    - Frontend: http://localhost:3001
    - API Gateway: http://localhost:80
    - Grafana Dashboard: http://localhost:3000 (default credentials: admin/admin)
    - Prometheus: http://localhost:9095
    - RabbitMQ Management UI: http://localhost:15672 (default credentials: admin/password)
 
-Note: The monitoring stack (Prometheus and Grafana) is included by default. This will enable metrics collection and visualization for all services.
+Note: The monitoring stack (Prometheus and Grafana) is included when using the `--monitor` flag. This will enable metrics collection and visualization for all services.
 
 ### Service Ports
 

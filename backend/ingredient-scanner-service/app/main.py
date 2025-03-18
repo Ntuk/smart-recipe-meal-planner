@@ -116,8 +116,8 @@ async def startup_db_client():
         await app.mongodb["scanned_ingredients"].create_index("scanned_at")
         
         # Setup RabbitMQ exchanges and queues
-        if rabbitmq_client.connect():
-            rabbitmq_client.setup_ingredient_scanner_queues()
+        if await rabbitmq_client.connect():
+            await rabbitmq_client.setup_ingredient_scanner_queues()
         else:
             logger.warning("Failed to connect to RabbitMQ during startup. Will retry on demand.")
     except Exception as e:
@@ -129,7 +129,7 @@ async def shutdown_db_client():
     app.mongodb_client.close()
     
     # Close RabbitMQ connection
-    rabbitmq_client.close()
+    await rabbitmq_client.close()
 
 # Models
 class IngredientItem(BaseModel):
@@ -542,7 +542,7 @@ async def scan_image(file: UploadFile = File(...), current_user: dict = Depends(
         # Publish to RabbitMQ for async processing
         try:
             if rabbitmq_client.is_connected():
-                rabbitmq_client.publish_scan_result(scan_result)
+                await rabbitmq_client.publish_scan_result(scan_result)
                 logger.info("Published scan result to RabbitMQ")
             else:
                 logger.warning("RabbitMQ not connected, skipping message publish")
@@ -616,7 +616,7 @@ async def manual_input(request: ManualInputRequest, credentials: HTTPAuthorizati
         try:
             if not rabbitmq_client.is_connected():
                 logger.warning("RabbitMQ client not connected, attempting to connect...")
-                connect_result = rabbitmq_client.connect()
+                connect_result = await rabbitmq_client.connect()
                 logger.info(f"RabbitMQ connect result: {connect_result}")
                 if not connect_result:
                     logger.error("Failed to connect to RabbitMQ")
@@ -626,7 +626,7 @@ async def manual_input(request: ManualInputRequest, credentials: HTTPAuthorizati
                     )
             
             logger.info(f"Publishing to RabbitMQ with URI: {rabbitmq_client.connection_url}")
-            success = rabbitmq_client.publish_scan_result(scan_result)
+            success = await rabbitmq_client.publish_scan_result(scan_result)
             logger.info(f"RabbitMQ publish result: {success}")
             if not success:
                 logger.error("Failed to publish scan result to RabbitMQ")

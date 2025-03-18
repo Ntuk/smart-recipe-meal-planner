@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Database
   mongodb:
@@ -28,13 +26,13 @@ services:
 
   # MongoDB Exporter
   mongodb-exporter:
-    image: bitnami/mongodb-exporter:latest
+    image: percona/mongodb_exporter:0.39.0
     container_name: mongodb-exporter
-    restart: always
+    command:
+      - '--mongodb.uri=mongodb://mongodb:27017'
+      - '--web.listen-address=:9216'
     ports:
       - "9216:9216"
-    environment:
-      - MONGODB_URI=mongodb://admin:password@mongodb:27017
     depends_on:
       - mongodb
     networks:
@@ -134,11 +132,13 @@ services:
       - "8003:8000"
       - "9093:9090"  # Prometheus metrics port
     environment:
-      - MONGO_URI=mongodb://admin:password@mongodb:27017
+      - MONGODB_URL=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
       - AUTH_SERVICE_URL=http://auth-service:8000
       - RECIPE_SERVICE_URL=http://recipe-service:8000
-      - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
+      - RABBITMQ_URL=amqp://admin:password@rabbitmq:5672
+    volumes:
+      - ./backend/shared:/app/shared
     depends_on:
       mongodb:
         condition: service_started

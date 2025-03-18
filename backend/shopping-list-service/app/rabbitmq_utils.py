@@ -1,9 +1,8 @@
 import json
 import os
-import pika
+import aio_pika
 import logging
-import threading
-import time
+import asyncio
 from typing import Callable, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -24,7 +23,6 @@ class RabbitMQClient:
         self.connection_url = connection_url or os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
         self.connection = None
         self.channel = None
-        self.consumer_thread = None
         self.should_reconnect = True
         self.reconnect_delay = 5  # seconds
         self._consuming = False
@@ -32,7 +30,7 @@ class RabbitMQClient:
         self._current_callback = None
         self._current_queue = None
         
-    def connect(self) -> bool:
+    async def connect(self) -> bool:
         """
         Establish a connection to RabbitMQ and create a channel.
         
@@ -42,21 +40,20 @@ class RabbitMQClient:
         while self.should_reconnect:
             try:
                 # Create a connection parameters object from the URL
-                parameters = pika.URLParameters(self.connection_url)
-                parameters.heartbeat = 600
-                parameters.blocked_connection_timeout = 300
-                
-                # Establish connection
-                self.connection = pika.BlockingConnection(parameters)
+                self.connection = await aio_pika.connect_robust(
+                    self.connection_url,
+                    heartbeat=600,
+                    blocked_connection_timeout=300
+                )
                 
                 # Create a channel
-                self.channel = self.connection.channel()
+                self.channel = await self.connection.channel()
                 
                 logger.info("Successfully connected to RabbitMQ")
                 
                 # If we were consuming before, resume consumption
                 if self._consuming and self._current_queue and self._current_callback:
-                    self.start_consuming(self._current_queue, self._current_callback)
+                    await self.start_consuming(self._current_queue, self._current_callback)
                 
                 return True
                 
@@ -64,19 +61,19 @@ class RabbitMQClient:
                 logger.error(f"Failed to connect to RabbitMQ: {str(e)}")
                 if self.should_reconnect:
                     logger.info(f"Retrying connection in {self.reconnect_delay} seconds...")
-                    time.sleep(self.reconnect_delay)
+                    await asyncio.sleep(self.reconnect_delay)
                 else:
                     return False
         
         return False
     
-    def close(self):
+    async def close(self):
         """Close the connection to RabbitMQ."""
-        if self.connection and self.connection.is_open:
-            self.connection.close()
+        if self.connection and not self.connection.is_closed:
+            await self.connection.close()
             logger.info("RabbitMQ connection closed")
     
-    def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
+    async def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
         """
         Declare an exchange.
         
@@ -86,17 +83,17 @@ class RabbitMQClient:
             durable: Whether the exchange should survive broker restarts
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.exchange_declare(
-            exchange=exchange_name,
-            exchange_type=exchange_type,
+        await self.channel.declare_exchange(
+            exchange_name,
+            type=aio_pika.ExchangeType(exchange_type),
             durable=durable
         )
         logger.info(f"Exchange '{exchange_name}' declared")
     
-    def declare_queue(self, queue_name: str, durable: bool = True):
+    async def declare_queue(self, queue_name: str, durable: bool = True):
         """
         Declare a queue.
         
@@ -105,16 +102,16 @@ class RabbitMQClient:
             durable: Whether the queue should survive broker restarts
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.queue_declare(
-            queue=queue_name,
+        await self.channel.declare_queue(
+            queue_name,
             durable=durable
         )
         logger.info(f"Queue '{queue_name}' declared")
     
-    def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
+    async def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
         """
         Bind a queue to an exchange with a routing key.
         
@@ -124,17 +121,18 @@ class RabbitMQClient:
             routing_key: Routing key for binding
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.queue_bind(
-            queue=queue_name,
-            exchange=exchange_name,
-            routing_key=routing_key
-        )
+        # Get the queue and exchange
+        queue = await self.channel.get_queue(queue_name)
+        exchange = await self.channel.get_exchange(exchange_name)
+        
+        # Bind the queue to the exchange
+        await queue.bind(exchange, routing_key)
         logger.info(f"Queue '{queue_name}' bound to exchange '{exchange_name}' with routing key '{routing_key}'")
     
-    def publish_message(self, exchange_name: str, routing_key: str, message: Dict[str, Any]):
+    async def publish_message(self, exchange_name: str, routing_key: str, message: Dict[str, Any]):
         """
         Publish a message to an exchange with a routing key.
         
@@ -147,22 +145,24 @@ class RabbitMQClient:
             bool: True if message was published successfully, False otherwise
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return False
         
         try:
             # Convert message to JSON string
-            message_body = json.dumps(message)
+            message_body = json.dumps(message).encode()
+            
+            # Get the exchange
+            exchange = await self.channel.get_exchange(exchange_name)
             
             # Publish the message
-            self.channel.basic_publish(
-                exchange=exchange_name,
-                routing_key=routing_key,
-                body=message_body,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # Make message persistent
+            await exchange.publish(
+                aio_pika.Message(
+                    body=message_body,
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     content_type='application/json'
-                )
+                ),
+                routing_key=routing_key
             )
             logger.info(f"Message published to exchange '{exchange_name}' with routing key '{routing_key}'")
             return True
@@ -171,9 +171,9 @@ class RabbitMQClient:
             logger.error(f"Failed to publish message: {str(e)}")
             return False
     
-    def start_consuming(self, queue_name: str, callback: Callable, auto_ack: bool = True):
+    async def start_consuming(self, queue_name: str, callback: Callable, auto_ack: bool = True):
         """
-        Start consuming messages from a queue in a separate thread.
+        Start consuming messages from a queue.
         
         Args:
             queue_name: Name of the queue to consume from
@@ -181,7 +181,7 @@ class RabbitMQClient:
             auto_ack: Whether to automatically acknowledge messages
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
         
         # Store current consumer settings
@@ -194,80 +194,55 @@ class RabbitMQClient:
             # Cancel any existing consumer
             if self._consumer_tag:
                 try:
-                    self.channel.basic_cancel(self._consumer_tag)
+                    queue = await self.channel.get_queue(self._current_queue)
+                    await queue.cancel(self._consumer_tag)
                 except Exception:
                     pass
             
-            # Start a new consumer
-            self._consumer_tag = self.channel.basic_consume(
-                queue=queue_name,
-                on_message_callback=callback,
-                auto_ack=auto_ack
-            )
+            # Get the queue
+            queue = await self.channel.get_queue(queue_name)
+            
+            # Start consuming
+            async def process_message(message):
+                async with message.process():
+                    body = message.body.decode()
+                    await callback(None, None, None, body)
+            
+            self._consumer_tag = await queue.consume(process_message)
             
             logger.info(f"Started consuming messages from queue '{queue_name}'")
-            
-            # Start consuming in a separate thread
-            def consume_thread():
-                try:
-                    # Only start consuming if we're not already consuming
-                    if self.channel and not self.channel.is_consuming:
-                        self.channel.start_consuming()
-                except pika.exceptions.ConnectionClosedByBroker:
-                    logger.error("Connection closed by broker")
-                except pika.exceptions.AMQPConnectionError:
-                    logger.error("Lost connection to RabbitMQ")
-                except Exception as e:
-                    logger.error(f"Error in consumer thread: {str(e)}")
-                finally:
-                    # Clean up
-                    try:
-                        if self.channel and self.channel.is_open:
-                            self.channel.stop_consuming()
-                    except Exception:
-                        pass
-                    
-                    # Try to reconnect if we should
-                    if self._consuming and self.should_reconnect:
-                        self.connect()
-            
-            # Stop any existing consumer thread
-            if self.consumer_thread and self.consumer_thread.is_alive():
-                self.consumer_thread.join(timeout=1.0)
-            
-            # Start new consumer thread
-            self.consumer_thread = threading.Thread(target=consume_thread, daemon=True)
-            self.consumer_thread.start()
             
         except Exception as e:
             logger.error(f"Failed to start consuming: {str(e)}")
             self._consuming = False
     
-    def stop_consuming(self):
+    async def stop_consuming(self):
         """Stop consuming messages."""
         self._consuming = False
         if self.channel and self._consumer_tag:
             try:
-                self.channel.basic_cancel(self._consumer_tag)
+                queue = await self.channel.get_queue(self._current_queue)
+                await queue.cancel(self._consumer_tag)
+                self._consumer_tag = None
             except Exception as e:
-                logger.error(f"Error canceling consumer: {str(e)}")
-        self._consumer_tag = None
-        self._current_callback = None
-        self._current_queue = None
-        logger.info("Stopped consuming messages")
+                logger.error(f"Error stopping consumer: {str(e)}")
     
-    def setup_shopping_list_queues(self):
-        """
-        Set up the exchanges and queues needed for the shopping list service.
-        """
+    async def setup_shopping_list_queues(self):
+        """Set up the necessary exchanges and queues for the shopping list service."""
         # Declare exchanges
-        self.declare_exchange("meal_plans", "topic")
-        self.declare_exchange("shopping_lists", "topic")
+        await self.declare_exchange("shopping_lists", "topic")
+        await self.declare_exchange("meal_plans", "topic")
         
         # Declare queues
-        self.declare_queue("meal_plans_created")
-        self.declare_queue("shopping_lists_created")
+        await self.declare_queue("shopping_lists_created")
+        await self.declare_queue("shopping_lists_updated")
+        await self.declare_queue("shopping_lists_deleted")
+        await self.declare_queue("meal_plans_created")
         
         # Bind queues to exchanges
-        self.bind_queue("meal_plans_created", "meal_plans", "meal_plan.created")
-        self.bind_queue("shopping_lists_created", "shopping_lists", "shopping_list.created") 
+        await self.bind_queue("shopping_lists_created", "shopping_lists", "created")
+        await self.bind_queue("shopping_lists_updated", "shopping_lists", "updated")
+        await self.bind_queue("shopping_lists_deleted", "shopping_lists", "deleted")
+        await self.bind_queue("meal_plans_created", "meal_plans", "created")
+        
+        logger.info("Shopping list queues setup completed") 

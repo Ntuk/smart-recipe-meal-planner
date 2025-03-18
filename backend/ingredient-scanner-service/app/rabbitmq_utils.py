@@ -1,6 +1,6 @@
 import json
 import os
-import pika
+import aio_pika
 import logging
 from typing import Callable, Dict, Any, Optional
 
@@ -23,7 +23,7 @@ class RabbitMQClient:
         self.connection = None
         self.channel = None
         
-    def connect(self) -> bool:
+    async def connect(self) -> bool:
         """
         Establish a connection to RabbitMQ and create a channel.
         
@@ -33,15 +33,14 @@ class RabbitMQClient:
         try:
             # Create a connection parameters object from the URL
             logger.info(f"Connecting to RabbitMQ with URL: {self.connection_url}")
-            parameters = pika.URLParameters(self.connection_url)
             
             # Establish connection
             logger.info("Attempting to establish connection...")
-            self.connection = pika.BlockingConnection(parameters)
+            self.connection = await aio_pika.connect_robust(self.connection_url)
             
             # Create a channel
             logger.info("Creating channel...")
-            self.channel = self.connection.channel()
+            self.channel = await self.connection.channel()
             
             logger.info("Successfully connected to RabbitMQ")
             return True
@@ -53,17 +52,17 @@ class RabbitMQClient:
             logger.error(f"Detailed error: {traceback.format_exc()}")
             return False
     
-    def close(self):
+    async def close(self):
         """Close the connection to RabbitMQ."""
-        if self.connection and self.connection.is_open:
-            self.connection.close()
+        if self.connection and not self.connection.is_closed:
+            await self.connection.close()
             logger.info("RabbitMQ connection closed")
     
     def is_connected(self) -> bool:
         """Check if the client is connected to RabbitMQ."""
-        return self.connection is not None and self.connection.is_open and self.channel is not None and self.channel.is_open
+        return self.connection is not None and not self.connection.is_closed and self.channel is not None and not self.channel.is_closed
     
-    def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
+    async def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
         """
         Declare an exchange.
         
@@ -73,17 +72,17 @@ class RabbitMQClient:
             durable: Whether the exchange should survive broker restarts
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.exchange_declare(
-            exchange=exchange_name,
-            exchange_type=exchange_type,
+        await self.channel.declare_exchange(
+            name=exchange_name,
+            type=exchange_type,
             durable=durable
         )
         logger.info(f"Exchange '{exchange_name}' declared")
     
-    def declare_queue(self, queue_name: str, durable: bool = True):
+    async def declare_queue(self, queue_name: str, durable: bool = True):
         """
         Declare a queue.
         
@@ -92,16 +91,16 @@ class RabbitMQClient:
             durable: Whether the queue should survive broker restarts
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.queue_declare(
-            queue=queue_name,
+        await self.channel.declare_queue(
+            name=queue_name,
             durable=durable
         )
         logger.info(f"Queue '{queue_name}' declared")
     
-    def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
+    async def bind_queue(self, queue_name: str, exchange_name: str, routing_key: str):
         """
         Bind a queue to an exchange with a routing key.
         
@@ -111,17 +110,15 @@ class RabbitMQClient:
             routing_key: Routing key for binding
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return
                 
-        self.channel.queue_bind(
-            queue=queue_name,
-            exchange=exchange_name,
-            routing_key=routing_key
-        )
+        queue = await self.channel.get_queue(queue_name)
+        exchange = await self.channel.get_exchange(exchange_name)
+        await queue.bind(exchange, routing_key)
         logger.info(f"Queue '{queue_name}' bound to exchange '{exchange_name}' with routing key '{routing_key}'")
     
-    def publish_message(self, exchange_name: str, routing_key: str, message: Dict[str, Any]):
+    async def publish_message(self, exchange_name: str, routing_key: str, message: Dict[str, Any]):
         """
         Publish a message to an exchange with a routing key.
         
@@ -134,24 +131,26 @@ class RabbitMQClient:
             bool: True if message was published successfully, False otherwise
         """
         if not self.channel:
-            if not self.connect():
+            if not await self.connect():
                 return False
         
         try:
             # Convert message to JSON string
-            message_body = json.dumps(message)
+            message_body = json.dumps(message).encode()
             logger.info(f"Publishing message to exchange '{exchange_name}' with routing key '{routing_key}'")
             logger.debug(f"Message body: {message_body[:200]}...")
             
+            # Get the exchange
+            exchange = await self.channel.get_exchange(exchange_name)
+            
             # Publish the message
-            self.channel.basic_publish(
-                exchange=exchange_name,
-                routing_key=routing_key,
-                body=message_body,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # Make message persistent
+            await exchange.publish(
+                aio_pika.Message(
+                    body=message_body,
+                    delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     content_type='application/json'
-                )
+                ),
+                routing_key=routing_key
             )
             logger.info(f"Message published to exchange '{exchange_name}' with routing key '{routing_key}'")
             return True
@@ -162,51 +161,22 @@ class RabbitMQClient:
             logger.error(f"Detailed error: {traceback.format_exc()}")
             return False
     
-    def consume_messages(self, queue_name: str, callback: Callable, auto_ack: bool = True):
-        """
-        Start consuming messages from a queue.
-        
-        Args:
-            queue_name: Name of the queue to consume from
-            callback: Function to call when a message is received
-            auto_ack: Whether to automatically acknowledge messages
-        """
-        if not self.channel:
-            if not self.connect():
-                return
-        
-        # Set up the consumer
-        self.channel.basic_consume(
-            queue=queue_name,
-            on_message_callback=callback,
-            auto_ack=auto_ack
-        )
-        
-        logger.info(f"Started consuming messages from queue '{queue_name}'")
-        
-        # Start consuming (this is a blocking call)
-        try:
-            self.channel.start_consuming()
-        except KeyboardInterrupt:
-            self.channel.stop_consuming()
-            self.close()
-    
-    def setup_ingredient_scanner_queues(self):
+    async def setup_ingredient_scanner_queues(self):
         """
         Set up the exchanges and queues needed for the ingredient scanner service.
         """
         # Declare exchanges
-        self.declare_exchange("ingredients", "topic")
+        await self.declare_exchange("ingredients", "topic")
         
         # Declare queues
-        self.declare_queue("detected_ingredients")
-        self.declare_queue("meal_planning_requests")
+        await self.declare_queue("detected_ingredients")
+        await self.declare_queue("meal_planning_requests")
         
         # Bind queues to exchanges
-        self.bind_queue("detected_ingredients", "ingredients", "ingredient.detected")
-        self.bind_queue("meal_planning_requests", "ingredients", "ingredient.planning")
+        await self.bind_queue("detected_ingredients", "ingredients", "ingredient.detected")
+        await self.bind_queue("meal_planning_requests", "ingredients", "ingredient.planning")
         
-    def publish_scan_result(self, scan_result: Dict[str, Any]) -> bool:
+    async def publish_scan_result(self, scan_result: Dict[str, Any]) -> bool:
         """
         Publish a scan result to the ingredients exchange.
         
@@ -220,11 +190,11 @@ class RabbitMQClient:
         try:
             if not self.is_connected():
                 logger.warning("Not connected to RabbitMQ, attempting to connect...")
-                if not self.connect():
+                if not await self.connect():
                     logger.error("Failed to connect to RabbitMQ")
                     return False
             
-            result = self.publish_message(
+            result = await self.publish_message(
                 exchange_name="ingredients",
                 routing_key="ingredient.detected",
                 message=scan_result

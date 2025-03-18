@@ -57,7 +57,7 @@ const ShoppingListPage = () => {
   const { t } = useTranslation();
   const { translateIngredientName } = useIngredientTranslation();
   
-  const { createShoppingList, checkItem, deleteShoppingList } = useShoppingList();
+  const { createShoppingList, checkItem, deleteShoppingList, shoppingLists, loading: listsLoading } = useShoppingList();
   
   const [items, setItems] = useState<ShoppingListItem[]>([]);
   const [newItem, setNewItem] = useState('');
@@ -67,10 +67,6 @@ const ShoppingListPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  const { data: shoppingListData, isLoading: isLoadingList } = useShoppingList(shoppingListId || '', {
-    enabled: !!shoppingListId
-  });
-  
   // Initialize shopping list from passed ingredients or saved list
   useEffect(() => {
     console.log('State from location:', state);
@@ -79,6 +75,7 @@ const ShoppingListPage = () => {
       // Load from saved list
       setItems(state.savedList.items);
       setListName(state.savedList.name);
+      setShoppingListId(state.savedList.id);
     } else if (state?.ingredients && state.ingredients.length > 0) {
       console.log('Ingredients from ScanPage:', state.ingredients);
       
@@ -90,43 +87,26 @@ const ShoppingListPage = () => {
       }));
       
       console.log('Formatted items:', formattedItems);
-      
       setItems(formattedItems);
-      
-      // Create a shopping list with the ingredients if the user is authenticated
-      if (isAuthenticated) {
-        const shoppingListData = {
-          name: `Ingredients from scan ${new Date().toLocaleDateString()}`,
-          items: state.ingredients.map(name => ({
-            name,
-            quantity: null,
-            unit: null,
-            checked: false
-          }))
-        };
-        
-        createShoppingList(shoppingListData)
-          .then(response => {
-            if (response) {
-              setShoppingListId(response.id);
-              setListName(response.name);
-            }
-          })
-          .catch(err => {
-            console.error('Error creating shopping list:', err);
-            setError('Failed to create shopping list automatically. Your items are still available locally.');
-          });
-      }
     }
-  }, [state, createShoppingList, isAuthenticated]);
+  }, [state]);
   
   // Update items when shopping list data changes
   useEffect(() => {
-    if (shoppingListData) {
-      setItems(shoppingListData.items);
-      setListName(shoppingListData.name);
+    if (shoppingListId && shoppingLists) {
+      const currentList = shoppingLists.find(list => list.id === shoppingListId);
+      if (currentList) {
+        const formattedItems = currentList.items.map(item => ({
+          id: uuidv4(),
+          name: item.name,
+          checked: item.checked,
+          category: categorizeIngredient(item.name)
+        }));
+        setItems(formattedItems);
+        setListName(currentList.name);
+      }
     }
-  }, [shoppingListData]);
+  }, [shoppingListId, shoppingLists]);
   
   // Create a shopping list
   const handleCreateShoppingList = async (mealPlanId: string, ingredients: string[]) => {
@@ -250,18 +230,17 @@ const ShoppingListPage = () => {
         const newList = {
           id: uuidv4(),
           name: listName,
-          items: items,
+          items,
           created_at: new Date().toISOString()
         };
-        
         savedLists.push(newList);
         localStorage.setItem('shoppingLists', JSON.stringify(savedLists));
         toast.success(t('shoppingList.savedLocally'));
       }
     } catch (err) {
       console.error('Error saving shopping list:', err);
-      setError(t('shoppingList.failedToSave'));
-      toast.error(t('shoppingList.failedToSave'));
+      setError(t('shoppingList.saveError'));
+      toast.error(t('shoppingList.saveError'));
     } finally {
       setIsLoading(false);
     }

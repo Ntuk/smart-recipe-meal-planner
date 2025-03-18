@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { shoppingListApiService } from '../services/api';
 import { useAuth } from './useAuth';
 
@@ -21,97 +21,78 @@ interface ShoppingList {
 }
 
 export const useShoppingList = () => {
-  const [shoppingLists, setShoppingLists] = useState<ShoppingList[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const { isAuthenticated } = useAuth();
+  const queryClient = useQueryClient();
 
-  const fetchShoppingLists = useCallback(async () => {
-    if (!isAuthenticated) return;
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const response = await shoppingListApiService.getShoppingLists();
-      setShoppingLists(response);
-    } catch (err) {
-      console.error('Error fetching shopping lists:', err);
-      setError('Failed to fetch shopping lists');
-    } finally {
-      setLoading(false);
-    }
-  }, [isAuthenticated]);
+  // Fetch shopping lists
+  const { data: shoppingLists, isLoading, error } = useQuery({
+    queryKey: ['shoppingLists'],
+    queryFn: () => shoppingListApiService.getShoppingLists(),
+    enabled: isAuthenticated,
+  });
 
-  const createShoppingList = useCallback(async (shoppingListData: any) => {
+  // Create shopping list mutation
+  const createMutation = useMutation({
+    mutationFn: (shoppingListData: any) => shoppingListApiService.createShoppingList(shoppingListData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+    },
+  });
+
+  // Check item mutation
+  const checkMutation = useMutation({
+    mutationFn: ({ shoppingListId, itemName, checked }: { shoppingListId: string; itemName: string; checked: boolean }) =>
+      shoppingListApiService.checkItem(shoppingListId, itemName, checked),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+    },
+  });
+
+  // Delete shopping list mutation
+  const deleteMutation = useMutation({
+    mutationFn: (shoppingListId: string) => shoppingListApiService.deleteShoppingList(shoppingListId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shoppingLists'] });
+    },
+  });
+
+  const createShoppingList = async (shoppingListData: any) => {
     if (!isAuthenticated) return null;
-    
-    setLoading(true);
-    setError(null);
-    
     try {
-      const response = await shoppingListApiService.createShoppingList(shoppingListData);
-      setShoppingLists(prev => [...prev, response]);
+      const response = await createMutation.mutateAsync(shoppingListData);
       return response;
     } catch (err) {
       console.error('Error creating shopping list:', err);
-      setError('Failed to create shopping list');
       return null;
-    } finally {
-      setLoading(false);
     }
-  }, [isAuthenticated]);
+  };
 
-  const checkItem = useCallback(async (shoppingListId: string, itemName: string, checked: boolean) => {
+  const checkItem = async (shoppingListId: string, itemName: string, checked: boolean) => {
     if (!isAuthenticated) return false;
-    
-    setLoading(true);
-    setError(null);
-    
     try {
-      const response = await shoppingListApiService.checkItem(shoppingListId, itemName, checked);
-      
-      // Update the shopping list in state
-      setShoppingLists(prev => 
-        prev.map(list => 
-          list.id === shoppingListId ? response : list
-        )
-      );
-      
+      await checkMutation.mutateAsync({ shoppingListId, itemName, checked });
       return true;
     } catch (err) {
       console.error('Error updating item:', err);
-      setError('Failed to update item');
       return false;
-    } finally {
-      setLoading(false);
     }
-  }, [isAuthenticated]);
+  };
 
-  const deleteShoppingList = useCallback(async (shoppingListId: string) => {
+  const deleteShoppingList = async (shoppingListId: string) => {
     if (!isAuthenticated) return false;
-    
-    setLoading(true);
-    setError(null);
-    
     try {
-      await shoppingListApiService.deleteShoppingList(shoppingListId);
-      setShoppingLists(prev => prev.filter(list => list.id !== shoppingListId));
+      await deleteMutation.mutateAsync(shoppingListId);
       return true;
     } catch (err) {
       console.error('Error deleting shopping list:', err);
-      setError('Failed to delete shopping list');
       return false;
-    } finally {
-      setLoading(false);
     }
-  }, [isAuthenticated]);
+  };
 
   return {
     shoppingLists,
-    loading,
-    error,
-    fetchShoppingLists,
+    loading: isLoading || createMutation.isPending || checkMutation.isPending || deleteMutation.isPending,
+    error: error || createMutation.error || checkMutation.error || deleteMutation.error,
     createShoppingList,
     checkItem,
     deleteShoppingList

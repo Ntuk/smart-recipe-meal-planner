@@ -89,24 +89,9 @@ def metrics():
 @app.on_event("startup")
 async def startup_db_client():
     try:
-        # Configure MongoDB client with optimized settings
-        app.mongodb_client = AsyncIOMotorClient(
-            MONGO_URI,
-            maxPoolSize=50,
-            minPoolSize=10,
-            maxIdleTimeMS=45000,
-            connectTimeoutMS=2000,
-            serverSelectionTimeoutMS=2000,
-            heartbeatFrequencyMS=10000,
-            retryWrites=True,
-            w='majority',
-            readPreference='secondaryPreferred'
-        )
-        
-        app.mongodb = app.mongodb_client[DB_NAME]
-        
-        # Ping the database to check the connection
+        app.mongodb_client = AsyncIOMotorClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         await app.mongodb_client.admin.command('ping')
+        app.mongodb = app.mongodb_client[DB_NAME]
         logger.info("Successfully connected to MongoDB with optimized settings")
         
         # Create indexes for shopping lists collection
@@ -117,42 +102,62 @@ async def startup_db_client():
         max_retries = 5
         retry_count = 0
         while retry_count < max_retries:
-            if rabbitmq_client.connect():
-                rabbitmq_client.setup_shopping_list_queues()
+            try:
+                # Connect to RabbitMQ
+                await rabbitmq_client.connect()
+                await rabbitmq_client.setup_shopping_list_queues()
                 
                 # Start consuming messages from the meal_plans_created queue
-                rabbitmq_client.start_consuming(
+                async def process_meal_plan_created(ch, method, properties, body):
+                    try:
+                        # Parse the message body
+                        message = json.loads(body)
+                        logger.info(f"Received meal plan created message: {message}")
+                        
+                        # Extract meal plan data from the message
+                        meal_plan_id = message.get("meal_plan_id")
+                        user_id = message.get("user_id")
+                        
+                        if not meal_plan_id or not user_id:
+                            logger.warning("Invalid message format: missing required fields")
+                            return
+                            
+                        # Create a shopping list from the meal plan
+                        await create_shopping_list_from_meal_plan(meal_plan_id, user_id)
+                        
+                    except Exception as e:
+                        logger.error(f"Error processing meal plan created message: {str(e)}")
+                
+                await rabbitmq_client.start_consuming(
                     queue_name="meal_plans_created",
                     callback=process_meal_plan_created
                 )
                 
                 logger.info("Started consuming messages from RabbitMQ")
                 break
-            else:
+            except Exception as e:
                 retry_count += 1
                 if retry_count < max_retries:
                     logger.warning(f"Failed to connect to RabbitMQ. Retrying in 5 seconds... (Attempt {retry_count}/{max_retries})")
                     await asyncio.sleep(5)
                 else:
                     logger.error("Failed to connect to RabbitMQ after maximum retries")
+                    raise e
     except Exception as e:
-        logger.error(f"Error during startup: {str(e)}")
+        logger.error(f"Failed to connect to MongoDB: {str(e)}")
         raise e
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    try:
-        if hasattr(app, 'mongodb_client'):
-            app.mongodb_client.close()
-            logger.info("Closed MongoDB connection")
+    if hasattr(app, "mongodb_client"):
+        app.mongodb_client.close()
+        logger.info("Closed MongoDB connection")
         
         # Stop consuming messages and close RabbitMQ connection
         rabbitmq_client.should_reconnect = False  # Prevent reconnection attempts during shutdown
-        rabbitmq_client.stop_consuming()
-        rabbitmq_client.close()
+        await rabbitmq_client.stop_consuming()
+        await rabbitmq_client.close()
         logger.info("Closed RabbitMQ connection")
-    except Exception as e:
-        logger.error(f"Error during shutdown: {str(e)}")
 
 # Models
 class ShoppingListItem(BaseModel):
@@ -571,12 +576,4 @@ async def delete_shopping_list(shopping_list_id: str, current_user: dict = Depen
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
-
-@app.on_event("startup")
-async def startup():
-    # Start metrics server in a separate thread
-    def run_metrics_server():
-        uvicorn.run(app, host="0.0.0.0", port=9102)
-
-    threading.Thread(target=run_metrics_server, daemon=True).start() 
+    return {"status": "healthy"} 

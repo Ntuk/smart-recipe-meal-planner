@@ -20,7 +20,7 @@ class RabbitMQClient:
         Args:
             connection_url: The RabbitMQ connection URL. If not provided, it will be read from environment variable.
         """
-        self.connection_url = connection_url or os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
+        self.connection_url = connection_url or os.getenv("RABBITMQ_URI", "amqp://admin:password@localhost:5672/")
         self.connection = None
         self.channel = None
         self.consumer_thread = None
@@ -182,16 +182,7 @@ class RabbitMQClient:
         def consume_thread():
             try:
                 self._consuming = True
-                while self._consuming:
-                    try:
-                        self.connection.process_data_events(time_limit=1)  # Process events for 1 second
-                    except Exception as e:
-                        logger.error(f"Error processing events: {str(e)}")
-                        if not self._consuming:
-                            break
-                        # Try to reconnect
-                        if not self.connect():
-                            break
+                self.channel.start_consuming()
             except Exception as e:
                 logger.error(f"Error in consumer thread: {str(e)}")
             finally:
