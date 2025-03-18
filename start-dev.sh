@@ -14,58 +14,54 @@ done
 echo "Stopping any existing MongoDB container..."
 docker stop mongodb 2>/dev/null || true
 
-# Start MongoDB
-echo "Starting MongoDB..."
-docker start mongodb || docker compose up -d mongodb
-sleep 5  # Wait for MongoDB to start
+# Start MongoDB and RabbitMQ
+echo "Starting MongoDB and RabbitMQ..."
+docker compose up -d mongodb rabbitmq
+sleep 5  # Wait for services to start
 
-# Define the path to uvicorn
-UVICORN_PATH="/Users/nicotukiainen/.pyenv/versions/3.10.3/bin/uvicorn"
+# Export environment variables
+export RABBITMQ_URI="amqp://admin:password@localhost:5672/"
+export MONGO_URI="mongodb://admin:password@localhost:27017"
 
-# Start Auth Service
+# Store the root directory
+ROOT_DIR=$(pwd)
+
+# Start services
 echo "Starting Auth Service..."
-cd backend/auth-service
-$UVICORN_PATH app.main:app --reload --host 0.0.0.0 --port 8000 &
-cd ../..
+cd $ROOT_DIR/backend/auth-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 
-# Start Recipe Service
 echo "Starting Recipe Service..."
-cd backend/recipe-service
-$UVICORN_PATH app.main:app --reload --host 0.0.0.0 --port 8001 &
-cd ../..
+cd $ROOT_DIR/backend/recipe-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001 &
 
-# Start Ingredient Scanner Service
 echo "Starting Ingredient Scanner Service..."
-cd backend/ingredient-scanner-service
-$UVICORN_PATH app.main:app --reload --host 0.0.0.0 --port 8002 &
-cd ../..
+cd $ROOT_DIR/backend/ingredient-scanner-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8002 &
 
-# Start Meal Planning Service
 echo "Starting Meal Planning Service..."
-cd backend/meal-planning-service
-$UVICORN_PATH app.main:app --reload --host 0.0.0.0 --port 8003 &
-cd ../..
+cd $ROOT_DIR/backend/meal-planning-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8003 &
 
-# Start Shopping List Service
 echo "Starting Shopping List Service..."
-cd backend/shopping-list-service
-$UVICORN_PATH app.main:app --reload --host 0.0.0.0 --port 8004 &
-cd ../..
+cd $ROOT_DIR/backend/shopping-list-service
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8004 &
 
-# Start Frontend
 echo "Starting Frontend..."
-cd frontend
-npm run dev &
-cd ..
+cd $ROOT_DIR/frontend
+npm start &
 
 # Start monitoring services if --monitor flag is set
 if [ "$MONITOR" = true ]; then
     echo "Starting monitoring services..."
+    cd $ROOT_DIR
     docker compose -f docker-compose.yml up -d prometheus grafana
     echo "Monitoring services started!"
     echo "Grafana: http://localhost:3000"
     echo "Prometheus: http://localhost:9090"
 fi
+
+cd $ROOT_DIR
 
 echo "All services started!"
 echo "Frontend: http://localhost:5173"

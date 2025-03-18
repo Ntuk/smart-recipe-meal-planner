@@ -16,6 +16,20 @@ services:
     networks:
       - recipe-network
 
+  # MongoDB Exporter
+  mongodb-exporter:
+    image: bitnami/mongodb-exporter:latest
+    container_name: mongodb-exporter
+    restart: always
+    ports:
+      - "9216:9216"
+    environment:
+      - MONGODB_URI=mongodb://admin:password@mongodb:27017
+    depends_on:
+      - mongodb
+    networks:
+      - recipe-network
+
   # Message Broker
   rabbitmq:
     image: rabbitmq:3-management
@@ -31,6 +45,11 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     networks:
       - recipe-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   # Authentication Service
   auth-service:
@@ -63,9 +82,12 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8000
       - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
-      - mongodb
-      - auth-service
-      - rabbitmq
+      mongodb:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - recipe-network
 
@@ -83,9 +105,12 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8000
       - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
-      - mongodb
-      - auth-service
-      - rabbitmq
+      mongodb:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - recipe-network
 
@@ -104,10 +129,14 @@ services:
       - RECIPE_SERVICE_URL=http://recipe-service:8000
       - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
-      - mongodb
-      - auth-service
-      - recipe-service
-      - rabbitmq
+      mongodb:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      recipe-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - recipe-network
 
@@ -126,10 +155,14 @@ services:
       - MEAL_PLANNING_SERVICE_URL=http://meal-planning-service:8000
       - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
-      - mongodb
-      - auth-service
-      - meal-planning-service
-      - rabbitmq
+      mongodb:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      meal-planning-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     networks:
       - recipe-network
 

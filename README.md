@@ -215,18 +215,38 @@ cd smart-recipe-meal-planner
 2. Start the services
 ```bash
 # Start without monitoring
-./start-dev.sh
+docker compose up -d
 
 # Start with monitoring (includes Prometheus and Grafana)
-./start-dev.sh --monitor
+docker compose up -d
 ```
 
 3. Access the application
-   - Frontend: http://localhost:5174
-   - Grafana Dashboard: http://localhost:3000/dashboards (default credentials: admin/admin)
-   - Prometheus: http://localhost:9090
+   - Frontend: http://localhost:3001
+   - API Gateway: http://localhost:80
+   - Grafana Dashboard: http://localhost:3000 (default credentials: admin/admin)
+   - Prometheus: http://localhost:9095
+   - RabbitMQ Management UI: http://localhost:15672 (default credentials: admin/password)
 
-Note: The monitoring stack (Prometheus and Grafana) is optional and can be started using the `--monitor` flag. This will enable metrics collection and visualization for all services.
+Note: The monitoring stack (Prometheus and Grafana) is included by default. This will enable metrics collection and visualization for all services.
+
+### Service Ports
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3001 | React application |
+| API Gateway | 80 | Nginx reverse proxy |
+| Auth Service | 8000 | Authentication and user management |
+| Recipe Service | 8001 | Recipe database and search |
+| Ingredient Scanner | 8002 | OCR ingredient detection |
+| Meal Planning | 8003 | Meal plan generation |
+| Shopping List | 8004 | Shopping list management |
+| MongoDB | 27017 | Database |
+| RabbitMQ | 5672 | Message broker |
+| RabbitMQ Management | 15672 | RabbitMQ web interface |
+| Prometheus | 9095 | Metrics collection |
+| Grafana | 3000 | Metrics visualization |
+| MongoDB Exporter | 9216 | MongoDB metrics |
 
 ### Development
 

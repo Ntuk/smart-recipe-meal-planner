@@ -32,12 +32,15 @@ class RabbitMQClient:
         """
         try:
             # Create a connection parameters object from the URL
+            logger.info(f"Connecting to RabbitMQ with URL: {self.connection_url}")
             parameters = pika.URLParameters(self.connection_url)
             
             # Establish connection
+            logger.info("Attempting to establish connection...")
             self.connection = pika.BlockingConnection(parameters)
             
             # Create a channel
+            logger.info("Creating channel...")
             self.channel = self.connection.channel()
             
             logger.info("Successfully connected to RabbitMQ")
@@ -45,6 +48,9 @@ class RabbitMQClient:
             
         except Exception as e:
             logger.error(f"Failed to connect to RabbitMQ: {str(e)}")
+            # Print detailed exception information for debugging
+            import traceback
+            logger.error(f"Detailed error: {traceback.format_exc()}")
             return False
     
     def close(self):
@@ -52,6 +58,10 @@ class RabbitMQClient:
         if self.connection and self.connection.is_open:
             self.connection.close()
             logger.info("RabbitMQ connection closed")
+    
+    def is_connected(self) -> bool:
+        """Check if the client is connected to RabbitMQ."""
+        return self.connection is not None and self.connection.is_open and self.channel is not None and self.channel.is_open
     
     def declare_exchange(self, exchange_name: str, exchange_type: str = "topic", durable: bool = True):
         """
@@ -130,6 +140,8 @@ class RabbitMQClient:
         try:
             # Convert message to JSON string
             message_body = json.dumps(message)
+            logger.info(f"Publishing message to exchange '{exchange_name}' with routing key '{routing_key}'")
+            logger.debug(f"Message body: {message_body[:200]}...")
             
             # Publish the message
             self.channel.basic_publish(
@@ -146,6 +158,8 @@ class RabbitMQClient:
             
         except Exception as e:
             logger.error(f"Failed to publish message: {str(e)}")
+            import traceback
+            logger.error(f"Detailed error: {traceback.format_exc()}")
             return False
     
     def consume_messages(self, queue_name: str, callback: Callable, auto_ack: bool = True):
@@ -190,4 +204,35 @@ class RabbitMQClient:
         
         # Bind queues to exchanges
         self.bind_queue("detected_ingredients", "ingredients", "ingredient.detected")
-        self.bind_queue("meal_planning_requests", "ingredients", "ingredient.planning") 
+        self.bind_queue("meal_planning_requests", "ingredients", "ingredient.planning")
+        
+    def publish_scan_result(self, scan_result: Dict[str, Any]) -> bool:
+        """
+        Publish a scan result to the ingredients exchange.
+        
+        Args:
+            scan_result: Dictionary containing the scan result data
+            
+        Returns:
+            bool: True if message was published successfully, False otherwise
+        """
+        logger.info(f"Attempting to publish scan result: {scan_result}")
+        try:
+            if not self.is_connected():
+                logger.warning("Not connected to RabbitMQ, attempting to connect...")
+                if not self.connect():
+                    logger.error("Failed to connect to RabbitMQ")
+                    return False
+            
+            result = self.publish_message(
+                exchange_name="ingredients",
+                routing_key="ingredient.detected",
+                message=scan_result
+            )
+            logger.info(f"Publish result: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Exception in publish_scan_result: {str(e)}")
+            import traceback
+            logger.error(f"Detailed error: {traceback.format_exc()}")
+            return False 

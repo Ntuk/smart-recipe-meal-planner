@@ -18,6 +18,7 @@ from .rabbitmq_utils import RabbitMQClient
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+import nest_asyncio
 
 # Prometheus metrics
 REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
@@ -49,6 +50,7 @@ MONGODB_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 DATABASE_NAME = os.getenv("DB_NAME", "recipe_db")
 RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://localhost:8001")
 RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://guest:guest@localhost:5672/")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8000")
 
 # Initialize RabbitMQ client
 rabbitmq_client = RabbitMQClient(RABBITMQ_URI)
@@ -185,7 +187,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(
-                f"{RECIPE_SERVICE_URL}/profile",
+                f"{AUTH_SERVICE_URL}/profile",
                 headers={"Authorization": f"Bearer {token}"}
             )
             if response.status_code == 200:
@@ -227,7 +229,7 @@ def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 # Helper function to fetch recipes from Recipe Service
-async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
+async def fetch_recipes(ingredients=None, tags=None, cuisine=None, token=None):
     params = {}
     if ingredients:
         params["ingredients"] = ",".join(ingredients)
@@ -236,15 +238,35 @@ async def fetch_recipes(ingredients=None, tags=None, cuisine=None):
     if cuisine:
         params["cuisine"] = cuisine
     
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    
     try:
         start_time = time.time()
+        logger.info(f"Fetching recipes from {RECIPE_SERVICE_URL} with params: {params}")
+        logger.info(f"Using token: {bool(token)}")
+        
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{RECIPE_SERVICE_URL}/recipes", params=params)
+            response = await client.get(
+                f"{RECIPE_SERVICE_URL}/recipes",
+                params=params,
+                headers=headers
+            )
             response.raise_for_status()
             RECIPE_SERVICE_LATENCY.labels(operation="fetch_recipes").observe(time.time() - start_time)
-            return response.json()
-    except httpx.HTTPError as e:
-        logger.error(f"Error fetching recipes: {e}")
+            result = response.json()
+            logger.info(f"Received {len(result)} recipes from recipe service")
+            return result
+    except httpx.HTTPStatusError as http_err:
+        logger.error(f"HTTP error fetching recipes: {http_err.response.status_code} - {http_err}")
+        # Try without auth if we get a 401
+        if http_err.response.status_code == 401 and token:
+            logger.info("Trying to fetch recipes without authentication")
+            return await fetch_recipes(ingredients, tags, cuisine, None)
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching recipes: {str(e)}")
         return []
 
 # Helper function to fetch a recipe by ID from Recipe Service
@@ -426,6 +448,79 @@ async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_c
             MEAL_PLAN_OPERATIONS.labels(operation="delete", status="error").inc()
         raise e
 
+@app.get("/meal-plans/suggestions", response_model=List[dict])
+async def get_recipe_suggestions(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get recipe suggestions based on scanned ingredients for the current user.
+    Returns the most recent suggestions first.
+    """
+    try:
+        logger.info(f"Fetching recipe suggestions for user: {current_user['id']}")
+        db = app.mongodb
+        
+        # First check if the collection exists
+        collections = await db.list_collection_names()
+        if "recipe_suggestions" not in collections:
+            logger.info("recipe_suggestions collection does not exist yet")
+            return []
+            
+        # Query for suggestions
+        cursor = db.recipe_suggestions.find(
+            {"user_id": current_user["id"]},
+            sort=[("created_at", -1)],
+            limit=10
+        )
+        suggestions = await cursor.to_list(length=None)
+        
+        logger.info(f"Found {len(suggestions)} suggestions for user: {current_user['id']}")
+        
+        if not suggestions:
+            logger.info(f"No suggestions found for user: {current_user['id']}")
+            return []
+            
+        # Convert ObjectId to string for JSON serialization
+        for suggestion in suggestions:
+            suggestion["_id"] = str(suggestion["_id"])
+            # Convert datetime to string for JSON serialization
+            if isinstance(suggestion.get("created_at"), datetime):
+                suggestion["created_at"] = suggestion["created_at"].isoformat()
+            
+        return suggestions
+    except Exception as e:
+        logger.error(f"Error fetching recipe suggestions: {str(e)}")
+        import traceback
+        logger.error(f"Detailed error: {traceback.format_exc()}")
+        # Return empty array instead of raising an error
+        return []
+
+@app.get("/meal-plans/suggestions-basic")
+async def get_basic_suggestions(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    A simplified endpoint that doesn't access MongoDB directly.
+    Used for testing when there are issues with the database or message broker.
+    """
+    return [
+        {
+            "id": "simple-suggestion",
+            "user_id": current_user["id"],
+            "ingredients": ["chicken", "rice", "vegetables"],
+            "suggested_recipes": [
+                {
+                    "id": "simple-recipe",
+                    "name": "Simplified Chicken Rice Bowl",
+                    "prep_time": 10,
+                    "cook_time": 20,
+                    "servings": 2
+                }
+            ],
+            "created_at": datetime.utcnow().isoformat()
+        }
+    ]
+
 def process_detected_ingredients(ch, method, properties, body):
     """
     Process detected ingredients from RabbitMQ.
@@ -440,19 +535,35 @@ def process_detected_ingredients(ch, method, properties, body):
     try:
         # Parse the message body
         message = json.loads(body)
-        logger.info(f"Received message: {message}")
+        logger.info(f"Received message from RabbitMQ: {message}")
         
         # Extract ingredients from the message
         scan_id = message.get("scan_id")
         user_id = message.get("user_id")
+        token = message.get("token")
         ingredients_data = message.get("ingredients", [])
         
-        if not scan_id or not user_id or not ingredients_data:
-            logger.warning("Invalid message format: missing required fields")
+        logger.info(f"Extracted data - scan_id: {scan_id}, user_id: {user_id}, token present: {bool(token)}, ingredients count: {len(ingredients_data)}")
+        
+        if not scan_id:
+            logger.warning("Missing scan_id in message")
+            return
+            
+        if not user_id:
+            logger.warning("Missing user_id in message")
+            return
+            
+        if not token:
+            logger.warning("Missing token in message")
+            return
+            
+        if not ingredients_data:
+            logger.warning("No ingredients data in message")
             return
         
         # Extract ingredient names
         ingredient_names = [item.get("name") for item in ingredients_data if item.get("name")]
+        logger.info(f"Extracted ingredient names: {ingredient_names}")
         
         if not ingredient_names:
             logger.warning("No valid ingredients found in the message")
@@ -460,13 +571,23 @@ def process_detected_ingredients(ch, method, properties, body):
         
         logger.info(f"Processing {len(ingredient_names)} ingredients for user {user_id}: {ingredient_names}")
         
-        # Create a task to process the ingredients asynchronously
-        asyncio.create_task(process_ingredients_async(user_id, scan_id, ingredient_names))
+        # Run the async function in a new event loop
+        nest_asyncio.apply()
+        
+        # Create a new event loop and run the coroutine
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(process_ingredients_async(user_id, scan_id, ingredient_names, token))
+        finally:
+            loop.close()
         
     except Exception as e:
         logger.error(f"Error processing message: {str(e)}")
+        import traceback
+        logger.error(f"Detailed error: {traceback.format_exc()}")
 
-async def process_ingredients_async(user_id, scan_id, ingredient_names):
+async def process_ingredients_async(user_id, scan_id, ingredient_names, token):
     """
     Process ingredients asynchronously.
     This function is called from the RabbitMQ callback to process ingredients.
@@ -475,13 +596,48 @@ async def process_ingredients_async(user_id, scan_id, ingredient_names):
         user_id: User ID
         scan_id: Scan ID
         ingredient_names: List of ingredient names
+        token: User's authentication token
     """
     try:
+        logger.info(f"Processing ingredients asynchronously for user {user_id}, scan {scan_id}")
+        logger.info(f"Ingredients: {ingredient_names}")
+        logger.info(f"Token available: {bool(token)}")
+        
         # Fetch recipes that match the ingredients
-        recipes = await fetch_recipes(ingredients=ingredient_names)
+        try:
+            logger.info(f"Attempting to fetch recipes with ingredients: {ingredient_names}")
+            recipes = await fetch_recipes(ingredients=ingredient_names, token=token)
+            logger.info(f"Fetch recipes result: {recipes and len(recipes) or 0} recipes found")
+            if recipes:
+                logger.info(f"Found recipes: {[recipe.get('name', 'Unknown') for recipe in recipes]}")
+        except Exception as fetch_error:
+            logger.error(f"Error fetching recipes: {str(fetch_error)}")
+            import traceback
+            logger.error(f"Detailed fetch error: {traceback.format_exc()}")
+            recipes = []
         
         if not recipes:
             logger.warning(f"No recipes found for ingredients: {ingredient_names}")
+            # Store the empty suggestions anyway so we can see the attempt
+            suggestion = {
+                "user_id": user_id,
+                "scan_id": scan_id,
+                "ingredients": ingredient_names,
+                "suggested_recipes": [],
+                "created_at": datetime.utcnow(),
+                "error": "No recipes found for the provided ingredients"
+            }
+            
+            db = app.mongodb
+            try:
+                logger.info(f"Storing empty suggestion record for user {user_id}")
+                await db.recipe_suggestions.insert_one(suggestion)
+                logger.info(f"Successfully stored empty suggestion record for user {user_id}")
+            except Exception as db_error:
+                logger.error(f"Error storing empty suggestion: {str(db_error)}")
+                import traceback
+                logger.error(f"Detailed DB error: {traceback.format_exc()}")
+            
             return
         
         logger.info(f"Found {len(recipes)} recipes matching ingredients")
@@ -496,25 +652,50 @@ async def process_ingredients_async(user_id, scan_id, ingredient_names):
         }
         
         db = app.mongodb
-        await db.recipe_suggestions.insert_one(suggestion)
+        try:
+            logger.info(f"Storing suggestion with recipes for user {user_id}")
+            result = await db.recipe_suggestions.insert_one(suggestion)
+            suggestion_id = str(result.inserted_id)
+            logger.info(f"Successfully stored suggestion with ID: {suggestion_id}")
+        except Exception as db_error:
+            logger.error(f"Error storing suggestion: {str(db_error)}")
+            import traceback
+            logger.error(f"Detailed DB error: {traceback.format_exc()}")
+            return
         
         # Publish a message to notify that recipes have been suggested
-        message = {
-            "user_id": user_id,
-            "scan_id": scan_id,
-            "suggestion_id": str(suggestion.get("_id")),
-            "ingredient_count": len(ingredient_names),
-            "recipe_count": len(recipes),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        try:
+            message = {
+                "user_id": user_id,
+                "scan_id": scan_id,
+                "suggestion_id": suggestion_id,
+                "ingredient_count": len(ingredient_names),
+                "recipe_count": len(recipes),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+            logger.info(f"Publishing suggestion notification: {message}")
+            publish_result = rabbitmq_client.publish_message(
+                exchange_name="meal_plans",
+                routing_key="recipe.suggestion",
+                message=message
+            )
+            logger.info(f"Published message result: {publish_result}")
+        except Exception as publish_error:
+            logger.error(f"Error publishing suggestion notification: {str(publish_error)}")
+            import traceback
+            logger.error(f"Detailed publish error: {traceback.format_exc()}")
         
-        rabbitmq_client.publish_message(
-            exchange_name="meal_plans",
-            routing_key="recipe.suggestion",
-            message=message
-        )
-        
-        logger.info(f"Processed ingredients and suggested recipes for user {user_id}")
+        logger.info(f"Successfully processed ingredients and suggested recipes for user {user_id}")
         
     except Exception as e:
-        logger.error(f"Error processing ingredients asynchronously: {str(e)}") 
+        logger.error(f"Unexpected error in process_ingredients_async: {str(e)}")
+        import traceback
+        logger.error(f"Detailed error: {traceback.format_exc()}")
+
+@app.get("/test")
+async def test_endpoint():
+    """
+    A simple test endpoint that just returns a static message.
+    """
+    return {"message": "Meal planning service is working"} 

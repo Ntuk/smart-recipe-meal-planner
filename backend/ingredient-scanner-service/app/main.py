@@ -451,35 +451,100 @@ async def scan_image(file: UploadFile = File(...), current_user: dict = Depends(
         )
 
 @app.post("/manual-input", response_model=ScanResult)
-async def manual_input(request: ManualInputRequest, current_user: dict = Depends(get_current_user)):
-    """Process manually entered text to extract ingredients."""
+async def manual_input(request: ManualInputRequest, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """
+    Manually input ingredients for processing.
+    """
     try:
-        # Extract ingredients from text
-        ingredients = extract_ingredients_from_text(request.text)
+        # Get the auth token directly from the credentials
+        auth_token = credentials.credentials
+        logger.info(f"Auth token received: {bool(auth_token)}")
         
-        # Store scan result
+        # Get the current user
+        current_user = await get_current_user(credentials)
+        logger.info(f"Current user ID: {current_user['id']}")
+        
+        logger.info(f"Processing manual input request: {request.text}")
+        # Generate a scan ID
         scan_id = str(uuid.uuid4())
+        
+        # Process the ingredients
+        ingredients = [{"name": ingredient.strip()} for ingredient in request.text.split(",")]
+        logger.info(f"Processed ingredients: {ingredients}")
+        
+        # Create scan result with string datetime for JSON serialization
+        created_at = datetime.utcnow()
         scan_result = {
             "scan_id": scan_id,
             "user_id": current_user["id"],
-            "ingredients": [ingredient.dict() for ingredient in ingredients],
-            "created_at": datetime.utcnow()
+            "token": auth_token,  # Include the user's token directly from the authorization header
+            "ingredients": ingredients,
+            "created_at": created_at.isoformat()  # Convert to ISO format string for JSON
+        }
+        logger.info(f"Created scan result: {scan_result}")
+        
+        # Define the scan result for MongoDB (with datetime object)
+        mongodb_scan_result = {
+            "scan_id": scan_id,
+            "user_id": current_user["id"],
+            "token": auth_token,
+            "ingredients": ingredients,
+            "created_at": created_at  # Keep as datetime for MongoDB
         }
         
-        await app.mongodb["scans"].insert_one(scan_result)
+        # Store the scan result
+        try:
+            await app.mongodb["scans"].insert_one(mongodb_scan_result)
+            logger.info(f"Stored scan result in MongoDB: {scan_id}")
+        except Exception as mongo_err:
+            logger.error(f"MongoDB error: {str(mongo_err)}")
+            raise
         
-        # Publish to RabbitMQ for async processing
-        if rabbitmq_client.is_connected():
-            rabbitmq_client.publish_scan_result(scan_result)
+        # Publish the scan result to RabbitMQ
+        logger.info("Attempting to publish scan result to RabbitMQ")
+        try:
+            if not rabbitmq_client.is_connected():
+                logger.warning("RabbitMQ client not connected, attempting to connect...")
+                connect_result = rabbitmq_client.connect()
+                logger.info(f"RabbitMQ connect result: {connect_result}")
+                if not connect_result:
+                    logger.error("Failed to connect to RabbitMQ")
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to connect to message broker"
+                    )
+            
+            logger.info(f"Publishing to RabbitMQ with URI: {rabbitmq_client.connection_url}")
+            success = rabbitmq_client.publish_scan_result(scan_result)
+            logger.info(f"RabbitMQ publish result: {success}")
+            if not success:
+                logger.error("Failed to publish scan result to RabbitMQ")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to publish message to message broker"
+                )
+        except Exception as rabbitmq_err:
+            logger.error(f"RabbitMQ error: {str(rabbitmq_err)}")
+            raise
+            
+        logger.info("Successfully published scan result to RabbitMQ")
         
         SCAN_OPERATIONS.labels(operation="manual_input", status="success").inc()
-        return scan_result
+        # Create return object from the MongoDB result
+        return_scan_result = {
+            "scan_id": scan_id,
+            "ingredients": [IngredientItem(**ingredient) for ingredient in ingredients],
+            "created_at": created_at
+        }
+        return return_scan_result
+        
     except Exception as e:
         SCAN_OPERATIONS.labels(operation="manual_input", status="error").inc()
         logger.error(f"Error processing manual input: {str(e)}")
+        logger.exception("Detailed exception information:")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error processing text input"
+            detail="Error processing manual input"
         )
 
 @app.get("/scans", response_model=List[ScanResult])
