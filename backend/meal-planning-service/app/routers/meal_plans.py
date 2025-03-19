@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
 from datetime import datetime, date
@@ -8,6 +8,7 @@ import logging
 from bson import ObjectId
 import uuid
 import os
+import random
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,23 +31,25 @@ class PyObjectId(ObjectId):
         return {"type": "string"}
 
 class Recipe(BaseModel):
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    title: str
+    id: str
+    name: str
     description: Optional[str] = None
     ingredients: List[str]
-    instructions: List[str]
-    prep_time_minutes: int
-    cook_time_minutes: int
+    steps: List[str]
+    prep_time: int
+    cook_time: int
     servings: int
     tags: List[str] = []
     cuisine: Optional[str] = None
-    difficulty: Optional[str] = None
-    nutritional_info: Optional[dict] = None
+    image_url: Optional[str] = None
+    nutrition: Optional[dict] = None
 
     class Config:
-        populate_by_name = True
+        from_attributes = True
+        json_encoders = {
+            ObjectId: str
+        }
         arbitrary_types_allowed = True
-        json_encoders = {ObjectId: str}
 
 class RecipeRef(BaseModel):
     id: str
@@ -55,6 +58,14 @@ class RecipeRef(BaseModel):
     cook_time: int
     servings: int
     image_url: Optional[str] = None
+    ingredients: List[str] = []
+
+    class Config:
+        from_attributes = True
+        json_encoders = {
+            ObjectId: str
+        }
+        arbitrary_types_allowed = True
 
 class Meal(BaseModel):
     name: str  # e.g., "Breakfast", "Lunch", "Dinner", "Snack"
@@ -75,7 +86,8 @@ class MealPlanBase(BaseModel):
     notes: Optional[str] = None
 
 class MealPlanCreate(MealPlanBase):
-    pass
+    dietary_preferences: Optional[List[str]] = []
+    available_ingredients: Optional[List[str]] = []
 
 class MealPlan(MealPlanBase):
     id: str
@@ -89,7 +101,7 @@ class MealPlanUpdate(BaseModel):
     notes: Optional[str] = None
 
 # Environment variables
-RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://recipe-service:8000")
+RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://recipe-service:8001")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
 
 # Authentication dependency
@@ -124,22 +136,86 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
+async def select_recipes(
+    dietary_preferences: List[str],
+    available_ingredients: List[str],
+    token: str
+) -> List[RecipeRef]:
+    """Select recipes based on dietary preferences and available ingredients"""
+    try:
+        async with httpx.AsyncClient() as client:
+            # Build query parameters
+            params = {}
+            if dietary_preferences:
+                params['tags'] = dietary_preferences
+            if available_ingredients:
+                params['ingredients'] = available_ingredients
+            
+            # Get recipes from recipe service
+            response = await client.get(
+                f"{RECIPE_SERVICE_URL}/recipes",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"}
+            )
+            
+            if response.status_code == 200:
+                recipes = response.json()
+                # Convert recipes to RecipeRef format
+                return [
+                    RecipeRef(
+                        id=recipe['id'],
+                        name=recipe['name'],
+                        prep_time=recipe['prep_time'],
+                        cook_time=recipe['cook_time'],
+                        servings=recipe['servings'],
+                        image_url=recipe.get('image_url'),
+                        ingredients=[ingredient['name'] for ingredient in recipe.get('ingredients', [])]
+                    )
+                    for recipe in recipes
+                ]
+            else:
+                logger.error(f"Failed to get recipes: {response.status_code} - {response.text}")
+                return []
+    except Exception as e:
+        logger.error(f"Error selecting recipes: {str(e)}")
+        return []
+
 @router.post("/", response_model=MealPlan, status_code=status.HTTP_201_CREATED)
 async def create_meal_plan(
+    request: Request,
     meal_plan: MealPlanCreate,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     try:
         now = datetime.utcnow()
         meal_plan_id = str(uuid.uuid4())
         
-        # Convert days to dict for MongoDB
+        # Select recipes based on preferences and ingredients
+        recipes = await select_recipes(
+            meal_plan.dietary_preferences or [],
+            meal_plan.available_ingredients or [],
+            credentials.credentials
+        )
+        
+        # Convert days to dict for MongoDB and assign recipes
         days_data = []
         for day in meal_plan.days:
             day_dict = day.dict()
             day_dict["date"] = day.date.isoformat()
+            
+            # Assign recipes to each meal
+            for meal in day_dict["meals"]:
+                # Select 1-2 recipes per meal randomly from the available recipes
+                num_recipes = random.randint(1, 2)
+                if recipes:
+                    meal["recipes"] = random.sample(recipes, min(num_recipes, len(recipes)))
+                else:
+                    meal["recipes"] = []
+            
             days_data.append(day_dict)
         
+        # Create meal plan data without dietary preferences and available ingredients
         meal_plan_data = {
             "id": meal_plan_id,
             "user_id": current_user["id"],
@@ -152,22 +228,65 @@ async def create_meal_plan(
             "updated_at": now
         }
         
-        await app.mongodb.meal_plans.insert_one(meal_plan_data)
-        return meal_plan_data
+        # Get database from request state
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+        
+        db = request.app.state.db
+        logger.info("Database connection retrieved successfully")
+        
+        # Insert meal plan into database
+        try:
+            collection = db["meal_plans"]
+            # Convert meal_plan_data to a format that Motor can handle
+            # This avoids comparison issues with MongoDB objects
+            result = await collection.insert_one(meal_plan_data)
+            
+            if not result.inserted_id:
+                logger.error("Insert operation did not return a valid result")
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="Failed to insert meal plan"
+                )
+            
+            logger.info(f"Successfully inserted meal plan with ID: {result.inserted_id}")
+            return meal_plan_data
+            
+        except Exception as e:
+            logger.error(f"Error inserting meal plan: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error inserting meal plan: {str(e)}"
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating meal plan: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error creating meal plan"
+            detail=f"Error creating meal plan: {str(e)}"
         )
 
 @router.get("/", response_model=List[MealPlan])
 async def get_meal_plans(
+    request: Request,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+            
+        db = request.app.state.db
         query = {"user_id": current_user["id"]}
         
         if start_date:
@@ -175,20 +294,36 @@ async def get_meal_plans(
         if end_date:
             query["end_date"] = {"$lte": end_date.isoformat()}
         
-        cursor = app.mongodb.meal_plans.find(query)
+        logger.info(f"Querying meal plans with: {query}")
+        collection = db["meal_plans"]
+        cursor = collection.find(query)
         meal_plans = await cursor.to_list(length=None)
+        logger.info(f"Found {len(meal_plans)} meal plans")
         return meal_plans
     except Exception as e:
         logger.error(f"Error fetching meal plans: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error fetching meal plans"
+            detail=f"Error fetching meal plans: {str(e)}"
         )
 
 @router.get("/{meal_plan_id}", response_model=MealPlan)
-async def get_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
+async def get_meal_plan(
+    request: Request,
+    meal_plan_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     try:
-        meal_plan = await app.mongodb.meal_plans.find_one({
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+            
+        db = request.app.state.db
+        collection = db["meal_plans"]
+        meal_plan = await collection.find_one({
             "id": meal_plan_id,
             "user_id": current_user["id"]
         })
@@ -200,20 +335,35 @@ async def get_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_curr
             )
         
         return meal_plan
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        if not isinstance(e, HTTPException):
-            logger.error(f"Error fetching meal plan: {str(e)}")
-        raise e
+        logger.error(f"Error fetching meal plan: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching meal plan: {str(e)}"
+        )
 
 @router.put("/{meal_plan_id}", response_model=MealPlan)
 async def update_meal_plan(
+    request: Request,
     meal_plan_id: str,
     meal_plan_update: MealPlanUpdate,
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+            
+        db = request.app.state.db
+        collection = db["meal_plans"]
+        
         # Check if meal plan exists and belongs to user
-        meal_plan = await app.mongodb.meal_plans.find_one({
+        meal_plan = await collection.find_one({
             "id": meal_plan_id,
             "user_id": current_user["id"]
         })
@@ -236,23 +386,41 @@ async def update_meal_plan(
         
         update_data["updated_at"] = datetime.utcnow()
         
-        await app.mongodb.meal_plans.update_one(
+        await collection.update_one(
             {"id": meal_plan_id},
             {"$set": update_data}
         )
         
-        updated_meal_plan = await app.mongodb.meal_plans.find_one({"id": meal_plan_id})
+        updated_meal_plan = await collection.find_one({"id": meal_plan_id})
         return updated_meal_plan
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        if not isinstance(e, HTTPException):
-            logger.error(f"Error updating meal plan: {str(e)}")
-        raise e
+        logger.error(f"Error updating meal plan: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error updating meal plan: {str(e)}"
+        )
 
 @router.delete("/{meal_plan_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_meal_plan(
+    request: Request,
+    meal_plan_id: str,
+    current_user: dict = Depends(get_current_user)
+):
     try:
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+            
+        db = request.app.state.db
+        collection = db["meal_plans"]
+        
         # Check if meal plan exists and belongs to user
-        meal_plan = await app.mongodb.meal_plans.find_one({
+        meal_plan = await collection.find_one({
             "id": meal_plan_id,
             "user_id": current_user["id"]
         })
@@ -264,8 +432,12 @@ async def delete_meal_plan(meal_plan_id: str, current_user: dict = Depends(get_c
             )
         
         # Delete meal plan
-        await app.mongodb.meal_plans.delete_one({"id": meal_plan_id})
+        await collection.delete_one({"id": meal_plan_id})
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        if not isinstance(e, HTTPException):
-            logger.error(f"Error deleting meal plan: {str(e)}")
-        raise e 
+        logger.error(f"Error deleting meal plan: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error deleting meal plan: {str(e)}"
+        ) 

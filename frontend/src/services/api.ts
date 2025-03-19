@@ -184,31 +184,66 @@ export const mealPlanningApiService = {
   // Create a meal plan
   createMealPlan: async (mealPlan: {
     name: string;
-    days: number;
-    dietary_preferences: string[];
-    available_ingredients: string[];
-    user_id?: string;
+    start_date: string;
+    end_date: string;
+    days: Array<{
+      date: string;
+      meals: Array<{
+        name: string;
+        time?: string;
+        recipes: Array<{
+          id: string;
+          name: string;
+          prep_time: number;
+          cook_time: number;
+          servings: number;
+          image_url?: string;
+          ingredients?: Array<{
+            name: string;
+            quantity?: string;
+            unit?: string;
+          }>;
+        }>;
+        notes?: string;
+      }>;
+      notes?: string;
+    }>;
+    notes?: string;
+    dietary_preferences?: string[];
+    available_ingredients?: string[];
   }) => {
-    const response = await mealPlanningApi.post('/meal-plans', mealPlan);
-    return response.data;
+    try {
+      console.log('Auth token:', localStorage.getItem('auth_token'));
+      const response = await mealPlanningApi.post('/api/v1/meal-plans', mealPlan);
+      console.log('Response status:', response.status);
+      console.log('Response data:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating meal plan:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
+      throw error;
+    }
   },
   
   // Get a meal plan by ID
   getMealPlan: async (id: string) => {
-    const response = await mealPlanningApi.get(`/meal-plans/${id}`);
+    const response = await mealPlanningApi.get(`/api/v1/meal-plans/${id}`);
     return response.data;
   },
   
   // Get all meal plans
   getMealPlans: async (userId?: string) => {
     const params = userId ? { user_id: userId } : {};
-    const response = await mealPlanningApi.get('/meal-plans', { params });
+    const response = await mealPlanningApi.get('/api/v1/meal-plans', { params });
     return response.data;
   },
   
   // Delete a meal plan
   deleteMealPlan: async (id: string) => {
-    const response = await mealPlanningApi.delete(`/meal-plans/${id}`);
+    const response = await mealPlanningApi.delete(`/api/v1/meal-plans/${id}`);
     return response.data;
   },
 };

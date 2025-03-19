@@ -2,6 +2,21 @@ import os
 from shared.fastapi_app import create_app
 from shared.logging_config import setup_logging
 
+# Apply MongoDB fix for database object comparison
+try:
+    from motor.motor_asyncio import AsyncIOMotorDatabase
+    
+    # Monkey patch to fix the database comparison issue
+    def __bool__(self):
+        """Returns True if the database object exists."""
+        return True
+        
+    # Apply the patch
+    AsyncIOMotorDatabase.__bool__ = __bool__
+    print("MongoDB database object comparison patch applied!")
+except Exception as e:
+    print(f"Failed to apply MongoDB patch: {str(e)}")
+
 # Setup logging
 setup_logging()
 

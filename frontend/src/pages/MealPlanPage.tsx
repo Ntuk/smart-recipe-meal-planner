@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { useMealPlanning } from '../hooks/useMealPlanning';
-import { MealPlan, Recipe } from '../types';
+import { MealPlan } from '../types';
 import { useTranslation } from 'react-i18next';
 import { useIngredientTranslation } from '../hooks/useIngredientTranslation';
+import { toast } from 'react-hot-toast';
 
 // Remove mock recipe data
 
@@ -46,6 +47,7 @@ const MealPlanPage = () => {
     );
   };
 
+  
   // Handle ingredient removal
   const handleRemoveIngredient = (ingredient: string) => {
     setAvailableIngredients(prev => prev.filter(i => i !== ingredient));
@@ -68,23 +70,68 @@ const MealPlanPage = () => {
     setIsLoading(true);
     
     try {
-      // Create meal plan data
+      // Create start and end dates
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(startDate.getDate() + days - 1);
+      
+      // Create meal plan data with proper structure
       const mealPlanData = {
         name: planName,
-        days: days,
+        start_date: startDate.toISOString().split('T')[0],
+        end_date: endDate.toISOString().split('T')[0],
+        days: Array.from({ length: days }, (_, i) => {
+          const date = new Date(startDate);
+          date.setDate(startDate.getDate() + i);
+          return {
+            date: date.toISOString().split('T')[0],
+            meals: [
+              {
+                name: "Breakfast",
+                time: "08:00",
+                recipes: []
+              },
+              {
+                name: "Lunch",
+                time: "12:00",
+                recipes: []
+              },
+              {
+                name: "Dinner",
+                time: "18:00",
+                recipes: []
+              }
+            ]
+          };
+        }),
         dietary_preferences: dietaryPreferences,
-        available_ingredients: availableIngredients
+        available_ingredients: availableIngredients,
+        notes: `Meal plan for ${days} days with ${dietaryPreferences.length ? dietaryPreferences.join(', ') + ' preferences' : 'no specific preferences'}`
       };
       
+      console.log('Submitting meal plan data:', mealPlanData);
+      
       // Call the API to create a meal plan
+      console.log('Making API call to create meal plan...');
       const response = await createMealPlan(mealPlanData);
+      console.log('API response:', response);
+      
+      if (!response) {
+        throw new Error('Failed to create meal plan');
+      }
       
       // Set the meal plan data
       setMealPlan(response);
       
-      // Calculate missing ingredients
+      // Calculate missing ingredients from all recipes across all days
       const allRequiredIngredients = new Set(
-        response.recipes.flatMap(recipe => recipe.ingredients.map(i => i.toLowerCase()))
+        response.days.flatMap(day => 
+          day.meals.flatMap(meal => 
+            meal.recipes.flatMap(recipe => 
+              recipe.ingredients?.map(i => i.name.toLowerCase()) || []
+            )
+          )
+        )
       );
       
       const availableIngredientsLower = availableIngredients.map(i => i.toLowerCase());
@@ -96,6 +143,7 @@ const MealPlanPage = () => {
       setMissingIngredients(missingIngredientsArray);
     } catch (error) {
       console.error('Failed to generate meal plan:', error);
+      toast.error(t('mealPlan.generateError', 'Failed to generate meal plan'));
     } finally {
       setIsLoading(false);
     }
@@ -240,44 +288,52 @@ const MealPlanPage = () => {
                 <h2 className="text-xl font-bold text-gray-900">{planName}</h2>
                 
                 <div className="mt-6 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                  {mealPlan.recipes.map((recipe, index) => (
-                    <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                      <div className="p-5">
-                        <div className="flex justify-between items-start">
-                          <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {t('mealPlan.day', 'Day')} {index + 1}
-                          </span>
+                  {mealPlan.days.flatMap((day, dayIndex) => 
+                    day.meals.flatMap((meal, mealIndex) => 
+                      meal.recipes.map((recipe) => (
+                        <div key={`${day.date}-${mealIndex}-${recipe.id}`} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+                          <div className="p-5">
+                            <div className="flex justify-between items-start">
+                              <h3 className="text-lg font-medium text-gray-900">{recipe.name}</h3>
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {t('mealPlan.day', 'Day')} {dayIndex + 1} - {meal.name || `Meal ${mealIndex + 1}`}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm text-gray-500">
+                              {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} | 
+                              {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} | 
+                              {t('mealPlan.servings', 'Servings')}: {recipe.servings}
+                            </p>
+                            <div className="mt-4">
+                              <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
+                              <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
+                                {recipe.ingredients?.map((ingredient, idx) => (
+                                  <li key={idx} className={availableIngredients.some(i => 
+                                    i.toLowerCase().includes(ingredient.name.toLowerCase()) || 
+                                    ingredient.name.toLowerCase().includes(i.toLowerCase())
+                                  ) ? '' : 'text-red-500'}>
+                                    {translateIngredientName(ingredient.name)}
+                                    {!availableIngredients.some(i => 
+                                      i.toLowerCase().includes(ingredient.name.toLowerCase()) || 
+                                      ingredient.name.toLowerCase().includes(i.toLowerCase())
+                                    ) && ` (${t('mealPlan.missing', 'missing')})`}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="mt-5">
+                              <Link
+                                to={`/recipes/${recipe.id}`}
+                                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              >
+                                {t('recipes.viewRecipe')}
+                              </Link>
+                            </div>
+                          </div>
                         </div>
-                        <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
-                        <div className="mt-4">
-                          <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
-                          <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
-                            {recipe.ingredients.map((ingredient, idx) => (
-                              <li key={idx} className={availableIngredients.some(i => 
-                                i.toLowerCase().includes(ingredient.toLowerCase()) || 
-                                ingredient.toLowerCase().includes(i.toLowerCase())
-                              ) ? '' : 'text-red-500'}>
-                                {translateIngredientName(ingredient)}
-                                {!availableIngredients.some(i => 
-                                  i.toLowerCase().includes(ingredient.toLowerCase()) || 
-                                  ingredient.toLowerCase().includes(i.toLowerCase())
-                                ) && ` (${t('mealPlan.missing', 'missing')})`}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        <div className="mt-5">
-                          <Link
-                            to={`/recipes/${recipe.id}`}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                          >
-                            {t('recipes.viewRecipe')}
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      ))
+                    )
+                  )}
                 </div>
                 
                 {missingIngredients.length > 0 && (
