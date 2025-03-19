@@ -22,7 +22,8 @@
     "show": "Show",
     "hide": "Hide",
     "guest": "Guest",
-    "allRightsReserved": "All rights reserved"
+    "allRightsReserved": "All rights reserved",
+    "backToList": "Back to List"
   },
   "navigation": {
     "home": "Home",
@@ -90,10 +91,15 @@
     "titleRequired": "Title is required",
     "ingredientsRequired": "At least one ingredient is required",
     "instructionsRequired": "Instructions are required",
-    "searchPlaceholder": "e.g., pasta, chicken, tomatoes",
+    "searchPlaceholder": "Search recipes...",
     "allCuisines": "All Cuisines",
     "allDifficulties": "All Difficulties",
-    "moreIngredients": "+{{count}} more"
+    "moreIngredients": "+{{count}} more",
+    "addToMealPlan": "Add to Meal Plan",
+    "addToMealTime": "Add to {{mealTime}}",
+    "addedToMealPlan": "Recipe added to meal plan",
+    "addToMealPlanError": "Failed to add recipe to meal plan",
+    "selectForMealTime": "Select a recipe to add to {{mealTime}}"
   },
   "scan": {
     "title": "Ingredient Scanner",
@@ -152,7 +158,11 @@
       "keto": "Keto",
       "lowCarb": "Low-Carb",
       "paleo": "Paleo"
-    }
+    },
+    "numberOfDays": "Number of Days",
+    "confirmDelete": "Are you sure you want to delete this meal plan?",
+    "generateError": "Failed to generate meal plan",
+    "mealTime": "When to add"
   },
   "categories": {
     "produce": "Produce",
@@ -163,5 +173,20 @@
     "oilssauces": "Oils & Sauces",
     "cannedjarred": "Canned & Jarred",
     "other": "Other"
+  },
+  "errors": {
+    "mustBeLoggedIn": "You must be logged in",
+    "failedToFetchMealPlans": "Failed to fetch meal plans",
+    "failedToCreateMealPlan": "Failed to create meal plan",
+    "failedToDeleteMealPlan": "Failed to delete meal plan",
+    "failedToUpdateMealPlan": "Failed to update meal plan",
+    "mealPlanNotFound": "Meal plan not found",
+    "invalidDayIndex": "Invalid day index",
+    "mealNotFound": "Meal not found"
+  },
+  "success": {
+    "mealPlanCreated": "Meal plan created successfully",
+    "mealPlanDeleted": "Meal plan deleted successfully",
+    "recipeAddedToMealPlan": "Recipe added to meal plan"
   }
 } 

@@ -128,7 +128,7 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             )
 
 # Routes
-@router.get("/")
+@router.get("/api-info")
 async def root():
     return {"message": "Meal Planning Service API"}
 
@@ -279,6 +279,7 @@ async def get_meal_plans(
     current_user: dict = Depends(get_current_user)
 ):
     try:
+        logger.info(f"GET meal plans request received for user: {current_user['id']}")
         if not hasattr(request.app.state, 'db'):
             logger.error("Database not initialized in app state")
             raise HTTPException(
@@ -298,13 +299,43 @@ async def get_meal_plans(
         collection = db["meal_plans"]
         cursor = collection.find(query)
         meal_plans = await cursor.to_list(length=None)
-        logger.info(f"Found {len(meal_plans)} meal plans")
+        logger.info(f"Found {len(meal_plans)} meal plans: {meal_plans}")
         return meal_plans
     except Exception as e:
         logger.error(f"Error fetching meal plans: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching meal plans: {str(e)}"
+        )
+
+@router.get("/all", response_model=List[MealPlan])
+async def get_all_meal_plans(
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        logger.info(f"GET all meal plans request received for user: {current_user['id']}")
+        if not hasattr(request.app.state, 'db'):
+            logger.error("Database not initialized in app state")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database connection not initialized"
+            )
+            
+        db = request.app.state.db
+        query = {"user_id": current_user["id"]}
+        
+        logger.info(f"Querying all meal plans with: {query}")
+        collection = db["meal_plans"]
+        cursor = collection.find(query)
+        meal_plans = await cursor.to_list(length=None)
+        logger.info(f"Found {len(meal_plans)} meal plans: {meal_plans}")
+        return meal_plans
+    except Exception as e:
+        logger.error(f"Error fetching all meal plans: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error fetching all meal plans: {str(e)}"
         )
 
 @router.get("/{meal_plan_id}", response_model=MealPlan)
@@ -348,7 +379,7 @@ async def get_meal_plan(
 async def update_meal_plan(
     request: Request,
     meal_plan_id: str,
-    meal_plan_update: MealPlanUpdate,
+    meal_plan_update: dict,
     current_user: dict = Depends(get_current_user)
 ):
     try:
@@ -374,24 +405,63 @@ async def update_meal_plan(
                 detail=f"Meal plan {meal_plan_id} not found"
             )
         
-        # Update meal plan
-        update_data = meal_plan_update.dict(exclude_unset=True)
-        if "days" in update_data:
+        # Process the update data
+        update_data = {}
+        logger.info(f"Received update data: {meal_plan_update}")
+        
+        if "days" in meal_plan_update:
             days_data = []
-            for day in update_data["days"]:
-                day_dict = day.dict()
-                day_dict["date"] = day.date.isoformat()
-                days_data.append(day_dict)
+            for day in meal_plan_update["days"]:
+                try:
+                    # Convert date string to date object
+                    if "date" in day:
+                        day["date"] = datetime.strptime(day["date"], "%Y-%m-%d").date()
+                    
+                    # Process meals
+                    if "meals" in day:
+                        processed_meals = []
+                        for meal in day["meals"]:
+                            # Process recipes
+                            if "recipes" in meal:
+                                processed_recipes = []
+                                for recipe in meal["recipes"]:
+                                    # Ensure numeric fields
+                                    recipe["prep_time"] = int(recipe.get("prep_time", 0))
+                                    recipe["cook_time"] = int(recipe.get("cook_time", 0))
+                                    recipe["servings"] = int(recipe.get("servings", 4))
+                                    
+                                    processed_recipes.append(recipe)
+                                meal["recipes"] = processed_recipes
+                            
+                            processed_meals.append(meal)
+                        day["meals"] = processed_meals
+                    
+                    days_data.append(day)
+                except Exception as e:
+                    logger.error(f"Error processing day data: {str(e)}")
+                    logger.error(f"Problematic day data: {day}")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Error processing day data: {str(e)}"
+                    )
             update_data["days"] = days_data
         
         update_data["updated_at"] = datetime.utcnow()
+        logger.info(f"Final update data: {update_data}")
         
+        # Update the meal plan
         await collection.update_one(
             {"id": meal_plan_id},
             {"$set": update_data}
         )
         
+        # Fetch and return the updated meal plan
         updated_meal_plan = await collection.find_one({"id": meal_plan_id})
+        if not updated_meal_plan:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Meal plan {meal_plan_id} not found after update"
+            )
         return updated_meal_plan
     except HTTPException as he:
         raise he

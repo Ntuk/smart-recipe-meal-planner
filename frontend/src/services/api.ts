@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { Recipe, MealPlan } from '../types';
 
 // Create an axios instance with default config
 const api = axios.create({
@@ -181,6 +182,31 @@ export const ingredientScannerApiService = {
 
 // Meal Planning Service API
 export const mealPlanningApiService = {
+  // Get all meal plans
+  getMealPlans: async (userId?: string) => {
+    const params = userId ? { user_id: userId } : {};
+    try {
+      console.log('Fetching meal plans...');
+      // Use the root endpoint which is already set up to return all meal plans
+      const response = await mealPlanningApi.get('/api/v1/meal-plans/', { params });
+      console.log('Meal plans response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching meal plans:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
+      return [];
+    }
+  },
+  
+  // Get a meal plan by ID
+  getMealPlan: async (id: string) => {
+    const response = await mealPlanningApi.get(`/api/v1/meal-plans/${id}`);
+    return response.data;
+  },
+  
   // Create a meal plan
   createMealPlan: async (mealPlan: {
     name: string;
@@ -228,23 +254,61 @@ export const mealPlanningApiService = {
     }
   },
   
-  // Get a meal plan by ID
-  getMealPlan: async (id: string) => {
-    const response = await mealPlanningApi.get(`/api/v1/meal-plans/${id}`);
-    return response.data;
-  },
-  
-  // Get all meal plans
-  getMealPlans: async (userId?: string) => {
-    const params = userId ? { user_id: userId } : {};
-    const response = await mealPlanningApi.get('/api/v1/meal-plans', { params });
-    return response.data;
-  },
-  
   // Delete a meal plan
   deleteMealPlan: async (id: string) => {
     const response = await mealPlanningApi.delete(`/api/v1/meal-plans/${id}`);
     return response.data;
+  },
+  
+  // Update a meal plan
+  updateMealPlan: async (id: string, data: any): Promise<MealPlan> => {
+    try {
+      console.log('Sending formatted update:', data);
+      
+      // Format the data to match the backend's expectations
+      const formattedUpdate = {
+        days: data.days.map((day: any) => ({
+          date: typeof day.date === 'string' ? day.date : new Date(day.date).toISOString().split('T')[0],
+          meals: day.meals.map((meal: any) => ({
+            name: meal.name,
+            time: meal.time || '',
+            recipes: (meal.recipes || []).map((recipe: any) => ({
+              id: recipe.id,
+              name: recipe.name,
+              prep_time: Number(recipe.prep_time),
+              cook_time: Number(recipe.cook_time),
+              servings: Number(recipe.servings),
+              image_url: recipe.image_url || '',
+              ingredients: Array.isArray(recipe.ingredients) 
+                ? recipe.ingredients.map((ing: any) => 
+                    typeof ing === 'string' ? ing : (ing.name || ''))
+                : []
+            })),
+            notes: meal.notes || ''
+          })),
+          notes: day.notes || ''
+        }))
+      };
+      
+      // Remove any undefined values and ensure all required fields are present
+      const cleanFormattedUpdate = JSON.parse(JSON.stringify(formattedUpdate));
+      console.log('Formatted update data:', cleanFormattedUpdate);
+      
+      // Ensure the data is properly formatted for MongoDB
+      const mongoUpdate = {
+        $set: cleanFormattedUpdate
+      };
+      
+      const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, mongoUpdate);
+      return response.data;
+    } catch (error) {
+      console.error('Error updating meal plan:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
+      throw error;
+    }
   },
 };
 

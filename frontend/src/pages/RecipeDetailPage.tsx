@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useMealPlanning } from '../hooks/useMealPlanning';
+import { toast } from 'react-hot-toast';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -131,6 +133,10 @@ const RecipeDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [servings, setServings] = useState(4);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const forMealPlanId = searchParams.get('for_meal_plan');
+  const { addRecipeToMealPlan, mealPlans } = useMealPlanning();
 
   useEffect(() => {
     // Simulate API call to fetch recipe
@@ -149,6 +155,64 @@ const RecipeDetailPage = () => {
       setLoading(false);
     }, 500);
   }, [id]);
+
+  const handleAddToMealPlan = async () => {
+    if (!recipe) return;
+    
+    // If we have a meal plan ID from URL parameters, add directly to that meal plan
+    if (forMealPlanId) {
+      console.log(`Adding recipe ${recipe.id} to meal plan ${forMealPlanId}`);
+      const mealPlan = mealPlans.find(plan => plan.id === forMealPlanId);
+      
+      if (!mealPlan) {
+        console.error(`Meal plan with ID ${forMealPlanId} not found in:`, mealPlans);
+        toast.error('Meal plan not found');
+        return;
+      }
+      
+      // For simplicity, let's add to the first day and first meal (breakfast)
+      // In a full implementation, you'd show a UI to select the day and meal
+      const recipeToAdd = {
+        id: recipe.id,
+        name: recipe.title,
+        prep_time: recipe.prep_time_minutes,
+        cook_time: recipe.cook_time_minutes,
+        servings: recipe.servings,
+        ingredients: recipe.ingredients
+      };
+      
+      console.log('Adding recipe to meal plan:', recipeToAdd);
+      
+      const success = await addRecipeToMealPlan(
+        forMealPlanId, 
+        recipeToAdd, 
+        "Breakfast" // Use the meal time string directly
+      );
+      
+      console.log('Recipe addition result:', success);
+      
+      if (success) {
+        toast.success('Recipe added to meal plan');
+        navigate('/meal-plan');
+      } else {
+        toast.error('Failed to add recipe to meal plan');
+      }
+    } else {
+      // If no meal plan ID, navigate to the meal plan page for creation
+      navigate('/meal-plan', { 
+        state: { 
+          selectedRecipe: {
+            id: recipe.id,
+            name: recipe.title,
+            prep_time: recipe.prep_time_minutes,
+            cook_time: recipe.cook_time_minutes,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients
+          }
+        } 
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -379,13 +443,12 @@ const RecipeDetailPage = () => {
               </div>
               
               <div className="mt-8 flex justify-center space-x-4">
-                <Link
-                  to="/meal-plan"
-                  state={{ ingredients: recipe.ingredients }}
+                <button
+                  onClick={handleAddToMealPlan}
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                 >
-                  Add to Meal Plan
-                </Link>
+                  {forMealPlanId ? 'Add to Current Meal Plan' : 'Add to Meal Plan'}
+                </button>
                 <Link
                   to="/shopping-list"
                   state={{ ingredients: recipe.ingredients }}

@@ -44,13 +44,42 @@ export interface IngredientList {
 }
 
 // Meal Plan types
+export interface MealPlanRecipe {
+  id: string;
+  name: string;
+  prep_time: number;
+  cook_time: number;
+  servings: number;
+  image_url?: string;
+  ingredients?: Array<{
+    name: string;
+    quantity?: string;
+    unit?: string;
+  }>;
+}
+
+export interface MealPlanMeal {
+  name: string;
+  time?: string;
+  recipes: MealPlanRecipe[];
+  notes?: string;
+}
+
+export interface MealPlanDay {
+  date: string;
+  meals: MealPlanMeal[];
+  notes?: string;
+}
+
 export interface MealPlan {
   id: string;
   name: string;
-  recipes: Recipe[];
-  days: number;
-  created_at?: string;
+  start_date: string;
+  end_date: string;
+  days: MealPlanDay[];
   dietary_preferences: string[];
+  available_ingredients: string[];
+  notes?: string;
 }
 
 export interface MealPlanCreate {

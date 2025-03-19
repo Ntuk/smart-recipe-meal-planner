@@ -1,6 +1,9 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useMealPlanning } from '../hooks/useMealPlanning';
+import { Recipe } from '../types';
+import { toast } from 'react-hot-toast';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -54,31 +57,91 @@ const MOCK_RECIPES = [
   },
 ];
 
+interface LocationState {
+  forMealPlan?: string;
+  mealTime?: string;
+  currentMealPlan?: any;
+}
+
 const RecipesPage = () => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCuisine, setSelectedCuisine] = useState('');
-  const [selectedDifficulty, setSelectedDifficulty] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const { t } = useTranslation();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const state = location.state as LocationState;
+  const { addRecipeToMealPlan } = useMealPlanning();
+  
+  const [recipes, setRecipes] = useState<Recipe[]>(MOCK_RECIPES);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   // Get unique cuisines, difficulties, and tags from recipes
-  const cuisines = [...new Set(MOCK_RECIPES.map(recipe => recipe.cuisine))];
-  const difficulties = [...new Set(MOCK_RECIPES.map(recipe => recipe.difficulty))];
-  const allTags = [...new Set(MOCK_RECIPES.flatMap(recipe => recipe.tags))];
+  const cuisines = [...new Set(recipes.map(recipe => recipe.cuisine))];
+  const difficulties = [...new Set(recipes.map(recipe => recipe.difficulty))];
+  const allTags = [...new Set(recipes.flatMap(recipe => recipe.tags))];
 
   // Filter recipes based on search term and filters
-  const filteredRecipes = MOCK_RECIPES.filter(recipe => {
-    const matchesSearch = searchTerm === '' || 
-      recipe.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      recipe.ingredients.some(ingredient => ingredient.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filteredRecipes = recipes.filter(recipe => {
+    const matchesSearch = searchQuery === '' || 
+      recipe.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      recipe.ingredients.some(ingredient => ingredient.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const matchesCuisine = selectedCuisine === '' || recipe.cuisine === selectedCuisine;
-    const matchesDifficulty = selectedDifficulty === '' || recipe.difficulty === selectedDifficulty;
     const matchesTags = selectedTags.length === 0 || 
       selectedTags.every(tag => recipe.tags.includes(tag));
     
-    return matchesSearch && matchesCuisine && matchesDifficulty && matchesTags;
+    return matchesSearch && matchesTags;
   });
+
+  // Handle adding recipe to meal plan
+  const handleAddToMealPlan = async (recipe: Recipe) => {
+    console.log('Adding recipe to meal plan:', recipe);
+    console.log('Current state:', state);
+    
+    if (!state?.forMealPlan || !state?.mealTime) {
+      console.log('No meal plan context, navigating to create new plan');
+      navigate('/meal-plans', {
+        state: {
+          selectedRecipe: {
+            id: recipe.id,
+            name: recipe.title,
+            prep_time: recipe.prep_time_minutes,
+            cook_time: recipe.cook_time_minutes,
+            servings: recipe.servings,
+            ingredients: recipe.ingredients
+          }
+        }
+      });
+      return;
+    }
+
+    try {
+      console.log('Adding recipe to existing meal plan:', state.forMealPlan);
+      console.log('Meal time:', state.mealTime);
+      
+      // Add recipe to existing meal plan
+      const success = await addRecipeToMealPlan(
+        state.forMealPlan,
+        {
+          id: recipe.id,
+          name: recipe.title,
+          prep_time: recipe.prep_time_minutes,
+          cook_time: recipe.cook_time_minutes,
+          servings: recipe.servings,
+          ingredients: recipe.ingredients
+        },
+        state.mealTime // Pass the meal time string directly from state
+      );
+
+      if (success) {
+        toast.success(t('recipes.addedToMealPlan', 'Recipe added to meal plan'));
+        // Navigate back to meal plan with replace to prevent back button from returning here
+        navigate('/meal-plans', { replace: true });
+      }
+    } catch (error) {
+      console.error('Failed to add recipe to meal plan:', error);
+      toast.error(t('recipes.addToMealPlanError', 'Failed to add recipe to meal plan'));
+    }
+  };
 
   const handleTagToggle = (tag: string) => {
     setSelectedTags(prev => 
@@ -91,163 +154,88 @@ const RecipesPage = () => {
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        {/* Header */}
         <div className="px-4 py-6 sm:px-0">
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h1 className="text-2xl font-bold text-gray-900">{t('recipes.title')}</h1>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                {t('recipes.description', 'Find recipes based on ingredients, cuisine, or dietary preferences')}
-              </p>
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                {state?.forMealPlan 
+                  ? t('recipes.addToMealPlan', 'Add Recipe to Meal Plan') 
+                  : t('recipes.title', 'Recipes')}
+              </h1>
+              {state?.forMealPlan && (
+                <p className="mt-1 text-sm text-gray-500">
+                  {t('recipes.selectForMealTime', 'Select a recipe to add to {{mealTime}}', { mealTime: state.mealTime })}
+                </p>
+              )}
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-4">
-                <div className="sm:col-span-4">
-                  <label htmlFor="search" className="block text-sm font-medium text-gray-700">
-                    {t('common.search')}
-                  </label>
-                  <div className="mt-1">
-                    <input
-                      type="text"
-                      name="search"
-                      id="search"
-                      className="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      placeholder={t('recipes.searchPlaceholder', 'e.g., pasta, chicken, tomatoes')}
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                  </div>
-                </div>
+          </div>
+        </div>
 
-                <div>
-                  <label htmlFor="cuisine" className="block text-sm font-medium text-gray-700">
-                    {t('recipes.cuisine')}
-                  </label>
-                  <select
-                    id="cuisine"
-                    name="cuisine"
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                    value={selectedCuisine}
-                    onChange={(e) => setSelectedCuisine(e.target.value)}
+        {/* Search and Filters */}
+        <div className="mt-6 bg-white shadow rounded-lg p-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="sm:col-span-2">
+              <label htmlFor="search" className="block text-sm font-medium text-gray-700">
+                {t('common.search')}
+              </label>
+              <input
+                type="text"
+                id="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                placeholder={t('recipes.searchPlaceholder')}
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <span className="block text-sm font-medium text-gray-700">{t('recipes.tags')}</span>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => handleTagToggle(tag)}
+                    className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                      selectedTags.includes(tag)
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    }`}
                   >
-                    <option value="">{t('recipes.allCuisines', 'All Cuisines')}</option>
-                    {cuisines.map((cuisine) => (
-                      <option key={cuisine} value={cuisine}>
-                        {cuisine}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="difficulty" className="block text-sm font-medium text-gray-700">
-                    {t('recipes.difficulty')}
-                  </label>
-                  <select
-                    id="difficulty"
-                    name="difficulty"
-                    className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                    value={selectedDifficulty}
-                    onChange={(e) => setSelectedDifficulty(e.target.value)}
-                  >
-                    <option value="">{t('recipes.allDifficulties', 'All Difficulties')}</option>
-                    {difficulties.map((difficulty) => (
-                      <option key={difficulty} value={difficulty}>
-                        {difficulty}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <span className="block text-sm font-medium text-gray-700 mb-1">{t('recipes.tags')}</span>
-                  <div className="flex flex-wrap gap-2">
-                    {allTags.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                          selectedTags.includes(tag)
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-                        }`}
-                        onClick={() => handleTagToggle(tag)}
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredRecipes.length > 0 ? (
-                  filteredRecipes.map((recipe) => (
-                    <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                      <div className="p-5">
-                        <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
-                        <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
-                        <div className="mt-2">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                            {recipe.cuisine}
-                          </span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            {recipe.difficulty}
-                          </span>
-                        </div>
-                        <div className="mt-3">
-                          <p className="text-sm text-gray-500">
-                            <span className="font-medium">{t('recipes.prepTime')}:</span> {recipe.prep_time_minutes} min | 
-                            <span className="font-medium"> {t('recipes.cookTime')}:</span> {recipe.cook_time_minutes} min | 
-                            <span className="font-medium"> {t('recipes.servings')}:</span> {recipe.servings}
-                          </p>
-                        </div>
-                        <div className="mt-4">
-                          <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
-                          <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
-                            {recipe.ingredients.slice(0, 4).map((ingredient, index) => (
-                              <li key={index}>{ingredient}</li>
-                            ))}
-                            {recipe.ingredients.length > 4 && (
-                              <li>{t('recipes.moreIngredients', '+{{count}} more', { count: recipe.ingredients.length - 4 })}</li>
-                            )}
-                          </ul>
-                        </div>
-                        <div className="mt-5">
-                          <Link
-                            to={`/recipes/${recipe.id}`}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                          >
-                            {t('recipes.viewRecipe')}
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="sm:col-span-3 text-center py-12">
-                    <svg
-                      className="mx-auto h-12 w-12 text-gray-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <h3 className="mt-2 text-sm font-medium text-gray-900">{t('recipes.noRecipesFound')}</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {t('recipes.adjustSearchFilters')}
-                    </p>
-                  </div>
-                )}
+                    {tag}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Recipe Grid */}
+        <div className="mt-6 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredRecipes.map((recipe) => (
+            <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-6">
+                <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
+                <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
+                <div className="mt-4 flex space-x-2">
+                  <Link
+                    to={`/recipes/${recipe.id}`}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {t('recipes.viewRecipe', 'View Recipe')}
+                  </Link>
+                  <button
+                    onClick={() => handleAddToMealPlan(recipe)}
+                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    {state?.forMealPlan 
+                      ? t('recipes.addToMealTime', 'Add to {{mealTime}}', { mealTime: state.mealTime })
+                      : t('recipes.addToMealPlan', 'Add to Meal Plan')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
