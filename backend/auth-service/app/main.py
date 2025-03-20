@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Form, Request
+from fastapi import FastAPI, Depends, HTTPException, status, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
@@ -14,7 +14,6 @@ from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_
 from fastapi.responses import Response
 import time
 import logging
-from pydantic import ValidationError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -42,7 +41,7 @@ DB_NAME = os.getenv("DB_NAME", "recipe_app")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Initialize FastAPI app
 app = FastAPI(title="Auth Service", description="Authentication service for Smart Recipe & Meal Planner")
@@ -55,24 +54,7 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],  # Expose all headers
-    max_age=3600,  # Cache preflight requests for 1 hour
 )
-
-# Add request logging middleware
-@app.middleware("http")
-async def log_requests(request, call_next):
-    logger.info(f"Request: {request.method} {request.url}")
-    logger.info(f"Headers: {dict(request.headers)}")
-    if request.method in ["POST", "PUT"]:
-        try:
-            body = await request.body()
-            logger.info(f"Raw body: {body}")
-            logger.info(f"Decoded body: {body.decode()}")
-            logger.info(f"Content-Type: {request.headers.get('content-type')}")
-        except Exception as e:
-            logger.error(f"Error reading request body: {e}")
-    response = await call_next(request)
-    return response
 
 # Database connection
 @app.on_event("startup")
@@ -142,18 +124,6 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
     preferences: Optional[dict] = None
 
-class LoginData(BaseModel):
-    email: EmailStr = Field(..., description="User's email address")
-    password: str = Field(..., min_length=1, description="User's password")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "email": "user@example.com",
-                "password": "userpassword"
-            }
-        }
-
 # Helper functions
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
@@ -207,6 +177,25 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise credentials_exception
     return user
+
+@app.middleware("http")
+async def monitor_requests(request, call_next):
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    
+    REQUESTS.labels(
+        method=request.method,
+        endpoint=request.url.path,
+        status=response.status_code
+    ).inc()
+    
+    REQUEST_LATENCY.labels(
+        method=request.method,
+        endpoint=request.url.path
+    ).observe(duration)
+    
+    return response
 
 @app.get("/metrics")
 async def metrics():
@@ -266,7 +255,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     try:
         user = await authenticate_user(app.mongodb, form_data.username, form_data.password)
         if not user:
-            logger.warning(f"Login failed for username: {form_data.username} - Invalid credentials")
             LOGIN_ATTEMPTS.labels(status="failed").inc()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -274,7 +262,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        logger.info(f"Login successful for username: {form_data.username}")
         LOGIN_ATTEMPTS.labels(status="success").inc()
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
@@ -282,17 +269,27 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
         
         return {"access_token": access_token, "token_type": "bearer"}
-    except HTTPException as e:
-        raise e
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        logger.error(f"Error type: {type(e)}")
-        logger.error(f"Error details: {e.__dict__}")
         LOGIN_ATTEMPTS.labels(status="error").inc()
+        raise e
+
+# JSON-based login endpoint for frontend
+@app.post("/login-json", response_model=Token)
+async def login_json(user_data: dict):
+    user = await authenticate_user(app.mongodb, user_data.get("username"), user_data.get("password"))
+    if not user:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred during login"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.id}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/profile", response_model=User)
 async def read_users_me(current_user: UserInDB = Depends(get_current_user)):

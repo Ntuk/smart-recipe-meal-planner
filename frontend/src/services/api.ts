@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Recipe, MealPlan } from '../types';
+import { MealPlan } from '../types';
 
 // Create an axios instance with default config
 const api = axios.create({
