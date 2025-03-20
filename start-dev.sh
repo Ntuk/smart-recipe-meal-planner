@@ -95,7 +95,7 @@ while [ $attempt -le $max_attempts ]; do
         echo "MongoDB and RabbitMQ are healthy!"
         break
     fi
-    echo "Waiting for services to be healthy (attempt $attempt/$max_attempts)... This can take a moment, but it's normal"
+    echo "Waiting for services (RabbitMQ and MongoDB) to be healthy (attempt $attempt/$max_attempts)... Might take up to 30 seconds"
     sleep 2
     ((attempt++))
 done

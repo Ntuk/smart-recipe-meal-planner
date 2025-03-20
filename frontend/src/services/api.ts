@@ -73,14 +73,19 @@ export const authApiService = {
   
   // Login user
   login: async (credentials: { email: string; password: string }) => {
-    const response = await authApi.post('/login', {
-      username: credentials.email,
-      password: credentials.password
+    const formData = new FormData();
+    formData.append('username', credentials.email);
+    formData.append('password', credentials.password);
+    
+    const response = await authApi.post('/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
     });
     
     // Store token in localStorage
     if (response.data.access_token) {
-      localStorage.setItem('auth_token', response.data.access_token);
+        localStorage.setItem('auth_token', response.data.access_token);
     }
     return response.data;
   },
