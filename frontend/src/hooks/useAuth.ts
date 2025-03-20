@@ -92,17 +92,8 @@ export const useAuth = () => {
         request: error.config?.data
       });
 
-      if (error.response?.status === 401) {
-        return { 
-          success: false, 
-          error: "Invalid email or password" 
-        };
-      }
-
-      return { 
-        success: false, 
-        error: error.response?.data?.detail || 'Login failed. Please try again.' 
-      };
+      // Throw the error to be caught by the component
+      throw error;
     }
   }, []);
 

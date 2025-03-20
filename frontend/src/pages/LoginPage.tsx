@@ -1,39 +1,50 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuthContext } from '../context/AuthContext';
+import { useAuth } from '../hooks/useAuth';
 import { useTranslation } from 'react-i18next';
 
-const LoginPage = () => {
+const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [formError, setFormError] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   
-  const { login, isLoading, error } = useAuthContext();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError('');
+    setError(null); // Clear any previous errors
     
     // Basic validation
     if (!email.trim()) {
-      setFormError(t('auth.email') + ' ' + t('common.error'));
+      setError(t('auth.email') + ' ' + t('common.error'));
       return;
     }
     
     if (!password.trim()) {
-      setFormError(t('auth.password') + ' ' + t('common.error'));
+      setError(t('auth.password') + ' ' + t('common.error'));
       return;
     }
     
-    // Submit login
-    login({ email, password });
-    
-    // Navigate to home page on successful login
-    // Note: This will happen after the login mutation succeeds
-    if (!error) {
-      navigate('/');
+    setIsLoading(true);
+    try {
+      const result = await login({ email, password });
+      if (result.success) {
+        navigate('/');
+      }
+    } catch (err: any) {
+      console.error('Login error:', err);
+      if (err.response?.status === 401) {
+        setError('Invalid email or password');
+      } else if (err.response?.status === 422) {
+        setError('Please check your email format and password (minimum 6 characters)');
+      } else {
+        setError('An error occurred during login. Please try again.');
+      }
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -53,32 +64,16 @@ const LoginPage = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            {(formError || error) && (
-              <div className="bg-red-50 border-l-4 border-red-400 p-4">
-                <div className="flex">
-                  <div className="flex-shrink-0">
-                    <svg
-                      className="h-5 w-5 text-red-400"
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm text-red-700">{formError || error}</p>
-                  </div>
+          {error && (
+            <div className="rounded-md bg-red-50 p-4 mb-4">
+              <div className="flex">
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">{error}</h3>
                 </div>
               </div>
-            )}
-
+            </div>
+          )}
+          <form className="space-y-6" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 {t('auth.email')}
@@ -139,7 +134,7 @@ const LoginPage = () => {
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoading ? t('common.loading') : t('common.login')}
               </button>
