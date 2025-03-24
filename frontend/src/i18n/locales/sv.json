@@ -22,7 +22,9 @@
     "show": "Visa",
     "hide": "Dölj",
     "guest": "Gäst",
-    "allRightsReserved": "Alla rättigheter förbehållna"
+    "allRightsReserved": "Alla rättigheter förbehållna",
+    "backToList": "Tillbaka till listan",
+    "view": "Visa"
   },
   "navigation": {
     "home": "Hem",
@@ -140,7 +142,12 @@
     "generatePlan": "Generera Plan",
     "day": "Dag",
     "missing": "saknas",
-    "missingIngredientsDescription": "Dessa ingredienser behövs för din måltidsplan men finns inte bland dina tillgängliga ingredienser."
+    "missingIngredientsDescription": "Dessa ingredienser behövs för din måltidsplan men finns inte bland dina tillgängliga ingredienser.",
+    "planSettings": "Planinställningar",
+    "dietaryPreferences": "Kostpreferenser",
+    "availableIngredients": "Tillgängliga ingredienser",
+    "savedPlans": "Dina måltidsplaner",
+    "createNew": "Skapa ny plan"
   },
   "categories": {
     "produce": "Färskvaror",

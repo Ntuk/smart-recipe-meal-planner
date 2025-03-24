@@ -77,8 +77,8 @@ export interface MealPlan {
   start_date: string;
   end_date: string;
   days: MealPlanDay[];
-  dietary_preferences: string[];
-  available_ingredients: string[];
+  dietary_preferences?: string[];
+  available_ingredients?: string[];
   notes?: string;
 }
 

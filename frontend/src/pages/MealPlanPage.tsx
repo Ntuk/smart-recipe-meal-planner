@@ -56,6 +56,35 @@ const MealPlanPage = () => {
       if (planFromId) {
         console.log("Found meal plan from URL params:", planFromId);
         setMealPlan(planFromId);
+        
+        // Check if we need to extract ingredients from plan recipes
+        // Since the API doesn't return available_ingredients field
+        const allIngredients = new Set<string>();
+        
+        // Extract all ingredients from recipes
+        if (planFromId.days) {
+          planFromId.days.forEach(day => {
+            day.meals.forEach(meal => {
+              meal.recipes.forEach(recipe => {
+                if (recipe.ingredients) {
+                  recipe.ingredients.forEach(ingredient => {
+                    const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
+                    if (ingredientName) {
+                      allIngredients.add(ingredientName);
+                    }
+                  });
+                }
+              });
+            });
+          });
+        }
+        
+        // Add the found ingredients to available ingredients
+        if (allIngredients.size > 0) {
+          console.log("Extracted ingredients from meal plan recipes:", Array.from(allIngredients));
+          setAvailableIngredients(prev => [...prev, ...Array.from(allIngredients)]);
+        }
+        
         setShowPlanForm(false);
       } else {
         console.error(`Meal plan with ID ${id} not found`);
@@ -139,6 +168,34 @@ const MealPlanPage = () => {
         });
       });
     }
+    
+    // Extract all ingredients from recipes since the API doesn't return available_ingredients
+    const allIngredients = new Set<string>();
+    
+    // Extract all ingredients from recipes
+    if (plan.days) {
+      plan.days.forEach(day => {
+        day.meals.forEach(meal => {
+          meal.recipes.forEach(recipe => {
+            if (recipe.ingredients) {
+              recipe.ingredients.forEach(ingredient => {
+                const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
+                if (ingredientName) {
+                  allIngredients.add(ingredientName);
+                }
+              });
+            }
+          });
+        });
+      });
+    }
+    
+    // Add the found ingredients to available ingredients
+    if (allIngredients.size > 0) {
+      console.log("Extracted ingredients from meal plan recipes:", Array.from(allIngredients));
+      setAvailableIngredients(Array.from(allIngredients));
+    }
+    
     setMealPlan(plan);
     setShowPlanForm(false);
   };

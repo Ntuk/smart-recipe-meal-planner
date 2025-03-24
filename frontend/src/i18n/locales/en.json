@@ -23,7 +23,8 @@
     "hide": "Hide",
     "guest": "Guest",
     "allRightsReserved": "All rights reserved",
-    "backToList": "Back to List"
+    "backToList": "Back to List",
+    "view": "View"
   },
   "navigation": {
     "home": "Home",
@@ -150,6 +151,8 @@
     "planSettings": "Plan Settings",
     "dietaryPreferences": "Dietary Preferences",
     "availableIngredients": "Available Ingredients",
+    "savedPlans": "Your Meal Plans",
+    "createNew": "Create New Plan",
     "dietaryOptions": {
       "vegetarian": "Vegetarian",
       "vegan": "Vegan",

@@ -22,7 +22,9 @@
     "show": "Näytä",
     "hide": "Piilota",
     "guest": "Vieras",
-    "allRightsReserved": "Kaikki oikeudet pidätetään"
+    "allRightsReserved": "Kaikki oikeudet pidätetään",
+    "backToList": "Takaisin listaan",
+    "view": "Näytä"
   },
   "navigation": {
     "home": "Etusivu",
@@ -140,7 +142,12 @@
     "generatePlan": "Luo Suunnitelma",
     "day": "Päivä",
     "missing": "puuttuu",
-    "missingIngredientsDescription": "Nämä ainekset tarvitaan ateriasuunnitelmaasi, mutta niitä ei ole saatavilla olevissa aineksissasi."
+    "missingIngredientsDescription": "Nämä ainekset tarvitaan ateriasuunnitelmaasi, mutta niitä ei ole saatavilla olevissa aineksissasi.",
+    "planSettings": "Suunnitelman asetukset",
+    "dietaryPreferences": "Ruokavalion mieltymykset",
+    "availableIngredients": "Saatavilla olevat ainekset",
+    "savedPlans": "Tallennetut ateriasuunnitelmat",
+    "createNew": "Luo uusi suunnitelma"
   },
   "categories": {
     "produce": "Tuoretuotteet",
