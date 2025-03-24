@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useLocation, Link, useNavigate } from 'react-router-dom';
+import { useLocation, Link, useNavigate, useParams } from 'react-router-dom';
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { MealPlan, MealPlanDay, MealPlanMeal, MealPlanRecipe } from '../types';
 import { useTranslation } from 'react-i18next';
@@ -17,11 +17,13 @@ interface LocationState {
     cook_time: number;
     servings: number;
   };
+  viewMealPlan?: MealPlan;
 }
 
 const MealPlanPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { id } = useParams(); // Get the meal plan ID from URL if present
   const state = location.state as LocationState;
   const { createMealPlan, fetchMealPlans, mealPlans, deleteMealPlan, addRecipeToMealPlan } = useMealPlanning();
   const { t } = useTranslation();
@@ -45,6 +47,24 @@ const MealPlanPage = () => {
     });
   }, [fetchMealPlans]);
 
+  // Load the specific meal plan when an ID is provided in the URL
+  useEffect(() => {
+    if (id && mealPlans.length > 0) {
+      console.log(`Loading meal plan with ID ${id} from URL params`);
+      const planFromId = mealPlans.find(plan => plan.id === id);
+      
+      if (planFromId) {
+        console.log("Found meal plan from URL params:", planFromId);
+        setMealPlan(planFromId);
+        setShowPlanForm(false);
+      } else {
+        console.error(`Meal plan with ID ${id} not found`);
+        toast.error(t('errors.mealPlanNotFound', 'Meal plan not found'));
+        navigate('/meal-plans', { replace: true });
+      }
+    }
+  }, [id, mealPlans, navigate, t]);
+
   // Set showPlanForm to false when meal plans are loaded and there are plans
   useEffect(() => {
     if (mealPlans.length > 0) {
@@ -58,6 +78,15 @@ const MealPlanPage = () => {
       setShowPlanForm(true);
     }
   }, [state?.selectedRecipe]);
+
+  // If there's a viewMealPlan in the state, show that meal plan
+  useEffect(() => {
+    if (state?.viewMealPlan) {
+      console.log("Automatically viewing meal plan from navigation state:", state.viewMealPlan);
+      setMealPlan(state.viewMealPlan);
+      setShowPlanForm(false);
+    }
+  }, [state?.viewMealPlan]);
 
   // Update the current meal plan view when mealPlans changes
   useEffect(() => {

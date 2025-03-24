@@ -40,6 +40,8 @@ function App() {
                 <Route path="/recipes/:id" element={<RecipeDetailPage />} />
                 <Route path="/scan" element={<ScanPage />} />
                 <Route path="/meal-plan" element={<MealPlanPage />} />
+                <Route path="/meal-plans" element={<MealPlanPage />} />
+                <Route path="/meal-plans/:id" element={<MealPlanPage />} />
                 <Route path="/shopping-list" element={<ShoppingListPage />} />
                 <Route path="/shopping-lists" element={<ShoppingListPage />} />
                 <Route path="/login" element={<LoginPage />} />

@@ -137,8 +137,14 @@ const RecipesPage = () => {
 
       if (success) {
         toast.success(t('recipes.addedToMealPlan', 'Recipe added to meal plan'));
-        // Navigate back to meal plan with replace to prevent back button from returning here
-        navigate('/meal-plans', { replace: true });
+        
+        // Use direct navigation to the meal plan page by ID instead of state
+        // This ensures we land on the meal plan view even if state is lost
+        if (state.forMealPlan) {
+          navigate(`/meal-plans/${state.forMealPlan}`, { replace: true });
+        } else {
+          navigate('/meal-plans', { replace: true });
+        }
       }
     } catch (error) {
       console.error('Failed to add recipe to meal plan:', error);
