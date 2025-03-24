@@ -41,37 +41,27 @@ const MealPlanPage = () => {
 
   // Load existing meal plans when component mounts
   useEffect(() => {
-    console.log("Fetching meal plans on mount...");
-    fetchMealPlans().then(() => {
-      console.log("Meal plans fetched, checking if we should show form or list...");
-    });
+    fetchMealPlans();
   }, [fetchMealPlans]);
 
   // Load the specific meal plan when an ID is provided in the URL
   useEffect(() => {
-    if (id && mealPlans.length > 0) {
-      console.log(`Loading meal plan with ID ${id} from URL params`);
+    if (id) {
       const planFromId = mealPlans.find(plan => plan.id === id);
-      
       if (planFromId) {
-        console.log("Found meal plan from URL params:", planFromId);
         setMealPlan(planFromId);
+        setShowPlanForm(false);
         
-        // Check if we need to extract ingredients from plan recipes
-        // Since the API doesn't return available_ingredients field
+        // Extract all unique ingredients from the recipes
         const allIngredients = new Set<string>();
         
-        // Extract all ingredients from recipes
         if (planFromId.days) {
           planFromId.days.forEach(day => {
             day.meals.forEach(meal => {
               meal.recipes.forEach(recipe => {
                 if (recipe.ingredients) {
                   recipe.ingredients.forEach(ingredient => {
-                    const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
-                    if (ingredientName) {
-                      allIngredients.add(ingredientName);
-                    }
+                    allIngredients.add(ingredient.name);
                   });
                 }
               });
@@ -79,20 +69,41 @@ const MealPlanPage = () => {
           });
         }
         
-        // Add the found ingredients to available ingredients
-        if (allIngredients.size > 0) {
-          console.log("Extracted ingredients from meal plan recipes:", Array.from(allIngredients));
-          setAvailableIngredients(prev => [...prev, ...Array.from(allIngredients)]);
-        }
-        
-        setShowPlanForm(false);
-      } else {
-        console.error(`Meal plan with ID ${id} not found`);
-        toast.error(t('errors.mealPlanNotFound', 'Meal plan not found'));
-        navigate('/meal-plans', { replace: true });
+        setAvailableIngredients(Array.from(allIngredients));
       }
     }
-  }, [id, mealPlans, navigate, t]);
+  }, [id, mealPlans]);
+
+  // When navigated to with state for viewing a meal plan
+  useEffect(() => {
+    if (state?.viewMealPlan) {
+      setMealPlan(state.viewMealPlan);
+      setShowPlanForm(false);
+      
+      if (state.viewMealPlan.available_ingredients) {
+        setAvailableIngredients(state.viewMealPlan.available_ingredients);
+      } else {
+        // Extract ingredients from recipes if available_ingredients is not provided
+        const allIngredients = new Set<string>();
+        
+        if (state.viewMealPlan.days) {
+          state.viewMealPlan.days.forEach(day => {
+            day.meals.forEach(meal => {
+              meal.recipes.forEach(recipe => {
+                if (recipe.ingredients) {
+                  recipe.ingredients.forEach(ingredient => {
+                    allIngredients.add(ingredient.name);
+                  });
+                }
+              });
+            });
+          });
+        }
+        
+        setAvailableIngredients(Array.from(allIngredients));
+      }
+    }
+  }, [state]);
 
   // Set showPlanForm to false when meal plans are loaded and there are plans
   useEffect(() => {
@@ -108,15 +119,6 @@ const MealPlanPage = () => {
     }
   }, [state?.selectedRecipe]);
 
-  // If there's a viewMealPlan in the state, show that meal plan
-  useEffect(() => {
-    if (state?.viewMealPlan) {
-      console.log("Automatically viewing meal plan from navigation state:", state.viewMealPlan);
-      setMealPlan(state.viewMealPlan);
-      setShowPlanForm(false);
-    }
-  }, [state?.viewMealPlan]);
-
   // Update the current meal plan view when mealPlans changes
   useEffect(() => {
     // If we're viewing a meal plan and mealPlans array was updated
@@ -124,7 +126,6 @@ const MealPlanPage = () => {
       // Find the current meal plan in the updated list
       const updatedPlan = mealPlans.find(plan => plan.id === mealPlan.id);
       if (updatedPlan) {
-        console.log('Updating displayed meal plan with latest data:', updatedPlan);
         setMealPlan(updatedPlan);
       }
     }
@@ -158,45 +159,26 @@ const MealPlanPage = () => {
 
   // Handle viewing a saved meal plan
   const handleViewMealPlan = (plan: MealPlan) => {
-    console.log("Viewing meal plan details:", plan);
-    console.log("Days in plan:", plan.days);
-    if (plan.days) {
-      plan.days.forEach((day, i) => {
-        console.log(`Day ${i+1} meals:`, day.meals);
-        day.meals.forEach((meal, j) => {
-          console.log(`Day ${i+1}, Meal ${j+1} recipes:`, meal.recipes);
+    const missingIngredientsSet = new Set<string>();
+    
+    // Collect all ingredients from recipes
+    plan.days.forEach((day, i) => {
+      day.meals.forEach((meal, j) => {
+        meal.recipes.forEach(recipe => {
+          if (recipe.ingredients) {
+            recipe.ingredients.forEach(ingredient => {
+              // Check if this ingredient is in our available ingredients
+              if (!availableIngredients.includes(ingredient.name)) {
+                missingIngredientsSet.add(ingredient.name);
+              }
+            });
+          }
         });
       });
-    }
-    
-    // Extract all ingredients from recipes since the API doesn't return available_ingredients
-    const allIngredients = new Set<string>();
-    
-    // Extract all ingredients from recipes
-    if (plan.days) {
-      plan.days.forEach(day => {
-        day.meals.forEach(meal => {
-          meal.recipes.forEach(recipe => {
-            if (recipe.ingredients) {
-              recipe.ingredients.forEach(ingredient => {
-                const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
-                if (ingredientName) {
-                  allIngredients.add(ingredientName);
-                }
-              });
-            }
-          });
-        });
-      });
-    }
-    
-    // Add the found ingredients to available ingredients
-    if (allIngredients.size > 0) {
-      console.log("Extracted ingredients from meal plan recipes:", Array.from(allIngredients));
-      setAvailableIngredients(Array.from(allIngredients));
-    }
+    });
     
     setMealPlan(plan);
+    setMissingIngredients(Array.from(missingIngredientsSet));
     setShowPlanForm(false);
   };
 
@@ -269,51 +251,26 @@ const MealPlanPage = () => {
         notes: `Meal plan for ${days} days with ${dietaryPreferences.length ? dietaryPreferences.join(', ') + ' preferences' : 'no specific preferences'}`
       };
       
-      console.log('Submitting meal plan data:', mealPlanData);
+      const newPlan = await createMealPlan(mealPlanData);
       
-      // Call the API to create a meal plan
-      console.log('Making API call to create meal plan...');
-      const response = await createMealPlan(mealPlanData);
-      console.log('API response:', response);
-      
-      if (!response) {
-        throw new Error('Failed to create meal plan');
+      if (newPlan) {
+        setMealPlan(newPlan);
+        
+        // If there was a recipe selected to add to this plan, add it
+        if (state?.selectedRecipe) {
+          await addRecipeToMealPlan(
+            newPlan.id, 
+            state.selectedRecipe, 
+            selectedMealTime || 'Breakfast',
+            0 // Add to first day
+          );
+          
+          // Navigate to remove state
+          navigate(`/meal-plans/${newPlan.id}`, { replace: true });
+        }
       }
-      
-      // If we have a selected recipe, add it to the meal plan
-      if (state?.selectedRecipe && response.id) {
-        console.log('Adding selected recipe to new meal plan:', state.selectedRecipe);
-        await addRecipeToMealPlan(
-          response.id,
-          state.selectedRecipe,
-          selectedMealTime // Pass the selected meal time directly
-        );
-      }
-      
-      // Set the meal plan data
-      setMealPlan(response);
-      setShowPlanForm(false);
-      
-      // Calculate missing ingredients from all recipes across all days
-      const allRequiredIngredients = new Set<string>(
-        response.days.flatMap((day: MealPlanDay) => 
-          day.meals.flatMap((meal: MealPlanMeal) => 
-            meal.recipes.flatMap((recipe: MealPlanRecipe) => 
-              recipe.ingredients?.map(i => i.name.toLowerCase()) || []
-            )
-          )
-        )
-      );
-      
-      const availableIngredientsLower = availableIngredients.map(i => i.toLowerCase());
-      const missingIngredientsArray = Array.from(allRequiredIngredients)
-        .filter((ingredient: string) => !availableIngredientsLower.some(avail => 
-          ingredient.includes(avail) || avail.includes(ingredient)
-        ));
-      
-      setMissingIngredients(missingIngredientsArray);
     } catch (error) {
-      console.error('Failed to generate meal plan:', error);
+      console.error('Error creating meal plan:', error);
       toast.error(t('mealPlan.generateError', 'Failed to generate meal plan'));
     } finally {
       setIsLoading(false);
@@ -464,22 +421,17 @@ const MealPlanPage = () => {
     <div className="bg-white shadow sm:rounded-lg p-6">
       <div className="space-y-6">
         <div>
-          <label htmlFor="plan-name" className="block text-sm font-medium text-gray-700">
-            {t('mealPlan.planName', 'Plan Name')}
-          </label>
+          <label className="block text-sm font-medium text-gray-700">{t('mealPlan.planName', 'Plan Name')}</label>
           <input
             type="text"
-            id="plan-name"
             value={planName}
             onChange={(e) => setPlanName(e.target.value)}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
           />
         </div>
 
         <div>
-          <label htmlFor="days" className="block text-sm font-medium text-gray-700">
-            {t('mealPlan.numberOfDays', 'Number of Days')}
-          </label>
+          <label className="block text-sm font-medium text-gray-700">{t('mealPlan.numberOfDays', 'Number of Days')}</label>
           <input
             type="number"
             id="days"
@@ -493,9 +445,7 @@ const MealPlanPage = () => {
 
         {state?.selectedRecipe && (
           <div>
-            <label htmlFor="meal-time" className="block text-sm font-medium text-gray-700">
-              {t('mealPlan.mealTime', 'When to add')} {state.selectedRecipe.name}?
-            </label>
+            <label className="block text-sm font-medium text-gray-700">{t('mealPlan.mealTime', 'When to add')} {state.selectedRecipe.name}?</label>
             <select
               id="meal-time"
               value={selectedMealTime}
@@ -510,9 +460,7 @@ const MealPlanPage = () => {
         )}
 
         <div>
-          <span className="block text-sm font-medium text-gray-700">
-            {t('mealPlan.dietaryPreferences', 'Dietary Preferences')}
-          </span>
+          <span className="block text-sm font-medium text-gray-700">{t('mealPlan.dietaryPreferences', 'Dietary Preferences')}</span>
           <div className="mt-2 flex flex-wrap gap-2">
             {dietaryOptions.map((option) => (
               <button
@@ -715,13 +663,10 @@ const MealPlanPage = () => {
                         <h3 className="text-lg font-medium text-gray-900">Meal Schedule</h3>
                         <div className="mt-4">
                           {mealPlan.days && mealPlan.days.map((day, dayIndex) => {
-                            console.log(`Rendering day ${dayIndex}:`, day);
                             return (
                             <div key={dayIndex} className="mb-6 border-b pb-4">
                               <h4 className="font-medium">Day {dayIndex + 1}: {new Date(day.date).toLocaleDateString()}</h4>
                               {day.meals.map((meal, mealIndex) => {
-                                console.log(`Rendering meal ${mealIndex} (${meal.name}):`, meal);
-                                console.log(`Recipes for ${meal.name}:`, meal.recipes);
                                 return (
                                 <div key={mealIndex} className="ml-4 mt-2">
                                   <h5 className="font-medium">{meal.name} {meal.time && `(${meal.time})`}</h5>

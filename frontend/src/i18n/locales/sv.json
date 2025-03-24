@@ -147,7 +147,8 @@
     "dietaryPreferences": "Kostpreferenser",
     "availableIngredients": "Tillgängliga ingredienser",
     "savedPlans": "Dina måltidsplaner",
-    "createNew": "Skapa ny plan"
+    "createNew": "Skapa ny plan",
+    "noPlans": "Du har inga måltidsplaner ännu."
   },
   "categories": {
     "produce": "Färskvaror",

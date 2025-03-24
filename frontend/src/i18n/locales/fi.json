@@ -147,7 +147,8 @@
     "dietaryPreferences": "Ruokavalion mieltymykset",
     "availableIngredients": "Saatavilla olevat ainekset",
     "savedPlans": "Tallennetut ateriasuunnitelmat",
-    "createNew": "Luo uusi suunnitelma"
+    "createNew": "Luo uusi suunnitelma",
+    "noPlans": "Sinulla ei ole vielä ateriasuunnitelmia."
   },
   "categories": {
     "produce": "Tuoretuotteet",

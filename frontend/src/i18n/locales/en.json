@@ -153,6 +153,7 @@
     "availableIngredients": "Available Ingredients",
     "savedPlans": "Your Meal Plans",
     "createNew": "Create New Plan",
+    "noPlans": "You have no meal plans yet.",
     "dietaryOptions": {
       "vegetarian": "Vegetarian",
       "vegan": "Vegan",

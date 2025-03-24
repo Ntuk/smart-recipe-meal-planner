@@ -110,7 +110,6 @@ const RecipesPage = () => {
         // First fetch recipes from the API
         try {
           const apiRecipes = await recipeApiService.getRecipes();
-          console.log('Recipes from API:', apiRecipes);
           
           if (Array.isArray(apiRecipes) && apiRecipes.length > 0) {
             // Convert API format to our app's Recipe format
@@ -131,7 +130,6 @@ const RecipesPage = () => {
         if (storedRecipesJson) {
           const storedRecipes = JSON.parse(storedRecipesJson);
           if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
-            console.log('Found user-created recipes in localStorage:', storedRecipes);
             
             // Convert API format to our app's Recipe format and add to recipes state
             const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
@@ -148,7 +146,6 @@ const RecipesPage = () => {
         const lastCreatedRecipeJson = localStorage.getItem('last_created_recipe');
         if (lastCreatedRecipeJson) {
           const lastCreatedRecipe = JSON.parse(lastCreatedRecipeJson);
-          console.log('Found last created recipe in localStorage:', lastCreatedRecipe);
           
           // Convert to app format and add if it's not already in the list
           const formattedRecipe = convertApiRecipeToAppFormat(lastCreatedRecipe);
@@ -191,11 +188,7 @@ const RecipesPage = () => {
 
   // Handle adding recipe to meal plan
   const handleAddToMealPlan = async (recipe: Recipe) => {
-    console.log('Adding recipe to meal plan:', recipe);
-    console.log('Current state:', state);
-    
     if (!state?.forMealPlan || !state?.mealTime) {
-      console.log('No meal plan context, navigating to create new plan');
       navigate('/meal-plans', {
         state: {
           selectedRecipe: {
@@ -203,8 +196,7 @@ const RecipesPage = () => {
             name: recipe.title,
             prep_time: recipe.prep_time_minutes,
             cook_time: recipe.cook_time_minutes,
-            servings: recipe.servings,
-            ingredients: recipe.ingredients
+            servings: recipe.servings
           }
         }
       });
@@ -212,11 +204,6 @@ const RecipesPage = () => {
     }
 
     try {
-      console.log('Adding recipe to existing meal plan:', state.forMealPlan);
-      console.log('Meal time:', state.mealTime);
-      console.log('Selected day index:', state.selectedDay);
-      
-      // Add recipe to existing meal plan
       const success = await addRecipeToMealPlan(
         state.forMealPlan,
         {
@@ -227,15 +214,13 @@ const RecipesPage = () => {
           servings: recipe.servings,
           ingredients: recipe.ingredients
         },
-        state.mealTime, // Pass the meal time string
-        state.selectedDay // Pass the selected day index
+        state.mealTime,
+        state.selectedDay
       );
 
       if (success) {
         toast.success(t('recipes.addedToMealPlan', 'Recipe added to meal plan'));
         
-        // Use direct navigation to the meal plan page by ID instead of state
-        // This ensures we land on the meal plan view even if state is lost
         if (state.forMealPlan) {
           navigate(`/meal-plans/${state.forMealPlan}`, { replace: true });
         } else {
@@ -243,7 +228,6 @@ const RecipesPage = () => {
         }
       }
     } catch (error) {
-      console.error('Failed to add recipe to meal plan:', error);
       toast.error(t('recipes.addToMealPlanError', 'Failed to add recipe to meal plan'));
     }
   };

@@ -267,21 +267,13 @@ export const ingredientScannerApiService = {
 // Meal Planning Service API
 export const mealPlanningApiService = {
   // Get all meal plans
-  getMealPlans: async (userId?: string) => {
-    const params = userId ? { user_id: userId } : {};
+  getMealPlans: async (userId: string) => {
     try {
-      console.log('Fetching meal plans...');
-      // Use the root endpoint which is already set up to return all meal plans
-      const response = await mealPlanningApi.get('/api/v1/meal-plans/', { params });
-      console.log('Meal plans response:', response.data);
+      const response = await mealPlanningApi.get(`/api/v1/meal-plans?user_id=${userId}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching meal plans:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Response status:', error.response?.status);
-        console.error('Response data:', error.response?.data);
-      }
-      return [];
+      throw error;
     }
   },
   
@@ -345,29 +337,12 @@ export const mealPlanningApiService = {
   },
   
   // Update a meal plan
-  updateMealPlan: async (id: string, data: any): Promise<MealPlan> => {
+  updateMealPlan: async (id: string, updateData: any) => {
     try {
-      console.log('Sending update for meal plan:', id);
-      console.log('Update data:', data);
-      
-      // Remove any undefined values and ensure all required fields are present
-      const cleanData = JSON.parse(JSON.stringify(data));
-      
-      // Send the data directly - let the backend handle MongoDB formatting
-      console.log('Sending update data:', cleanData);
-      
-      const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, cleanData);
-      
-      // Log the full response for debugging
-      console.log('Update meal plan response:', response.data);
-      
+      const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, updateData);
       return response.data;
     } catch (error) {
       console.error('Error updating meal plan:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Response status:', error.response?.status);
-        console.error('Response data:', error.response?.data);
-      }
       throw error;
     }
   },

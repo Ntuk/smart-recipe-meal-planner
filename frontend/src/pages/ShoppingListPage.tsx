@@ -69,16 +69,13 @@ const ShoppingListPage = () => {
   
   // Initialize shopping list from passed ingredients or saved list
   useEffect(() => {
-    console.log('State from location:', state);
+    // If we have a mealPlanId from location state, load that meal plan
+    if (state?.mealPlanId) {
+      fetchMealPlanAndGenerateList(state.mealPlanId);
+    }
     
-    if (state?.savedList) {
-      // Load from saved list
-      setItems(state.savedList.items);
-      setListName(state.savedList.name);
-      setShoppingListId(state.savedList.id);
-    } else if (state?.ingredients && state.ingredients.length > 0) {
-      console.log('Ingredients from ScanPage:', state.ingredients);
-      
+    // If we have ingredients from the scan page, add them to the shopping list
+    if (state?.ingredients && Array.isArray(state.ingredients)) {
       const formattedItems = state.ingredients.map(ingredient => ({
         id: uuidv4(),
         name: ingredient,
@@ -86,7 +83,6 @@ const ShoppingListPage = () => {
         category: categorizeIngredient(ingredient)
       }));
       
-      console.log('Formatted items:', formattedItems);
       setItems(formattedItems);
     }
   }, [state]);
