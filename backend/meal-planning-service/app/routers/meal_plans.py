@@ -114,6 +114,7 @@ class MealPlanBase(BaseModel):
 class MealPlanCreate(MealPlanBase):
     dietary_preferences: Optional[List[str]] = []
     available_ingredients: Optional[List[str]] = []
+    skip_recipe_assignment: Optional[bool] = False  # Flag to skip automatic recipe assignment
 
 class MealPlan(MealPlanBase):
     id: str
@@ -221,29 +222,35 @@ async def create_meal_plan(
         now = datetime.utcnow()
         meal_plan_id = str(uuid.uuid4())
         
-        # Select recipes based on preferences and ingredients
-        recipes = await select_recipes(
-            meal_plan.dietary_preferences or [],
-            meal_plan.available_ingredients or [],
-            credentials.credentials
-        )
-        
-        # Convert days to dict for MongoDB and assign recipes
+        # Create a copy of the days to work with
         days_data = []
         for day in meal_plan.days:
             day_dict = day.dict()
             day_dict["date"] = day.date.isoformat()
             
-            # Assign recipes to each meal
+            # Ensure recipes are properly initialized
             for meal in day_dict["meals"]:
-                # Select 1-2 recipes per meal randomly from the available recipes
-                num_recipes = random.randint(1, 2)
-                if recipes:
-                    meal["recipes"] = random.sample(recipes, min(num_recipes, len(recipes)))
-                else:
+                if "recipes" not in meal or meal["recipes"] is None:
                     meal["recipes"] = []
             
             days_data.append(day_dict)
+        
+        # Only select and assign recipes if not skipped
+        if not meal_plan.skip_recipe_assignment:
+            # Select recipes based on preferences and ingredients
+            recipes = await select_recipes(
+                meal_plan.dietary_preferences or [],
+                meal_plan.available_ingredients or [],
+                credentials.credentials
+            )
+            
+            # Assign recipes to each meal
+            for day in days_data:
+                for meal in day["meals"]:
+                    # Select 1-2 recipes per meal randomly from the available recipes
+                    num_recipes = random.randint(1, 2)
+                    if recipes:
+                        meal["recipes"] = random.sample(recipes, min(num_recipes, len(recipes)))
         
         # Create meal plan data without dietary preferences and available ingredients
         meal_plan_data = {

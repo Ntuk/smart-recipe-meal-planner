@@ -56,6 +56,7 @@ export interface IngredientList {
 export interface MealPlanRecipe {
   id: string;
   name: string;
+  title?: string;
   prep_time: number;
   cook_time: number;
   servings: number;

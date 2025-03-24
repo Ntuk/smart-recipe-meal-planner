@@ -15,6 +15,7 @@ interface LocationState {
     prep_time: number;
     cook_time: number;
     servings: number;
+    ingredients?: Array<{ name: string }>;
   };
   viewMealPlan?: MealPlan;
 }
@@ -139,6 +140,20 @@ const MealPlanPage = () => {
     }
   }, [mealPlans, mealPlan, showPlanForm]);
 
+  // Add debugging useEffect
+  useEffect(() => {
+    if (mealPlan) {
+      console.log("Current meal plan:", mealPlan);
+      mealPlan.days.forEach((day, dayIndex) => {
+        day.meals.forEach((meal, mealIndex) => {
+          if (meal.recipes && meal.recipes.length > 0) {
+            console.log(`Recipes for day ${dayIndex+1}, ${meal.name}:`, meal.recipes);
+          }
+        });
+      });
+    }
+  }, [mealPlan]);
+
   // Dietary preferences options
   const dietaryOptions = [
     { id: 'vegetarian', label: t('mealPlan.dietaryOptions.vegetarian', 'Vegetarian') },
@@ -238,7 +253,7 @@ const MealPlanPage = () => {
       endDate.setDate(today.getDate() + days - 1);
       const endDateStr = endDate.toISOString().split('T')[0];
       
-      // Create simple days array
+      // Create simple days array with properly structured empty recipes arrays
       const daysArray = [];
       for (let i = 0; i < days; i++) {
         const date = new Date(today);
@@ -255,7 +270,7 @@ const MealPlanPage = () => {
         });
       }
       
-      // Create minimal plan structure
+      // Create minimal plan structure with flag to skip recipe assignment
       const planData = {
         name: planName,
         start_date: startDate,
@@ -263,6 +278,7 @@ const MealPlanPage = () => {
         days: daysArray,
         dietary_preferences: dietaryPreferences,
         available_ingredients: availableIngredients,
+        skip_recipe_assignment: true // Add flag to tell backend not to automatically assign recipes
       };
       
       console.log("Sending meal plan data:", planData);
@@ -274,9 +290,28 @@ const MealPlanPage = () => {
         // If there's a selected recipe in the state, add it to the plan
         if (state?.selectedRecipe && selectedMealTime) {
           try {
-            await addRecipeToMealPlan(newPlanId, state.selectedRecipe, selectedMealTime);
+            // Check if we have the recipe structure
+            const selectedRecipe = state.selectedRecipe;
+            
+            // Map the recipe from state to match the Recipe type
+            const recipeObject = {
+              id: selectedRecipe.id,
+              title: selectedRecipe.name,
+              description: '',
+              ingredients: Array.isArray(selectedRecipe.ingredients) ? selectedRecipe.ingredients : [],
+              instructions: [],
+              prep_time_minutes: selectedRecipe.prep_time,
+              cook_time_minutes: selectedRecipe.cook_time,
+              servings: selectedRecipe.servings,
+              tags: [],
+              cuisine: '',
+              difficulty: 'Medium'
+            };
+            
+            await addRecipeToMealPlan(newPlanId, recipeObject, selectedMealTime);
             toast.success(t('mealPlan.recipeAdded', 'Recipe added to meal plan'));
           } catch (error) {
+            console.error('Error adding recipe to meal plan:', error);
             toast.error(t('mealPlan.recipeAddError', 'Failed to add recipe to meal plan'));
           }
         }
@@ -288,9 +323,11 @@ const MealPlanPage = () => {
           setMealPlan(createdPlan);
           setShowPlanForm(false);
         }
+      } else {
+        toast.error(t('mealPlan.createError', 'Failed to create meal plan'));
       }
     } catch (error) {
-      console.error('Error generating meal plan:', error);
+      console.error('Error creating meal plan:', error);
       toast.error(t('mealPlan.createError', 'Failed to create meal plan'));
     } finally {
       setIsLoading(false);
@@ -654,7 +691,7 @@ const MealPlanPage = () => {
                               <li key={recipeIndex} className="px-3 py-2 flex justify-between items-center">
                                 <div>
                                   <Link to={`/recipes/${recipe.id}`} className="text-sm font-medium text-blue-600 hover:text-blue-800">
-                                    {recipe.name}
+                                    {recipe.name || recipe.title || "Unnamed Recipe"}
                                   </Link>
                                   <p className="text-xs text-gray-500">
                                     {t('recipe.prepTime', 'Prep')}: {recipe.prep_time} min | {t('recipe.cookTime', 'Cook')}: {recipe.cook_time} min

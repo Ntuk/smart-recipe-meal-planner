@@ -82,12 +82,19 @@ export const useMealPlanning = () => {
   };
 
   // Add function to add a recipe to a meal plan
-  const addRecipeToMealPlan = useCallback(async (mealPlanId: string, recipe: Recipe, mealTime: string, dayIndex?: number) => {
+  const addRecipeToMealPlan = useCallback(async (
+    mealPlanId: string, 
+    recipe: any, // Use 'any' to accept both Recipe and MealPlanRecipe
+    mealTime: string, 
+    dayIndex?: number
+  ) => {
     if (!user) {
       return false;
     }
     
     try {
+      console.log("Adding recipe to meal plan:", { mealPlanId, recipe, mealTime, dayIndex });
+      
       // First try to find the meal plan in state
       let mealPlan = mealPlans.find(mp => mp.id === mealPlanId);
       
@@ -125,6 +132,8 @@ export const useMealPlanning = () => {
         );
       }
       
+      console.log("Target day index:", targetDayIndex);
+      
       if (targetDayIndex === -1) {
         console.error('No day found with meal time:', mealTime);
         toast.error(t('errors.mealTimeNotFound', 'Meal time not found in meal plan'));
@@ -135,6 +144,8 @@ export const useMealPlanning = () => {
       
       // Find the meal by name
       const mealIndex = targetDay.meals.findIndex((meal: MealPlanMeal) => meal.name === mealTime);
+      console.log("Target meal index:", mealIndex, "in meal time:", mealTime);
+      
       if (mealIndex === -1) {
         console.error('Meal not found:', mealTime);
         toast.error(t('errors.mealNotFound', 'Meal not found in meal plan'));
@@ -145,10 +156,14 @@ export const useMealPlanning = () => {
       const minimalRecipe = {
         id: recipe.id,
         name: recipe.title || '',
+        title: recipe.title || '',
         prep_time: Number(recipe.prep_time_minutes) || 0,
         cook_time: Number(recipe.cook_time_minutes) || 0,
         servings: Number(recipe.servings) || 1,
+        image_url: recipe.image_url || ''
       };
+      
+      console.log("Adding recipe to meal:", minimalRecipe);
       
       // Add the recipe to the meal
       targetDay.meals[mealIndex].recipes.push(minimalRecipe);
@@ -158,22 +173,29 @@ export const useMealPlanning = () => {
         days: updatedDays
       };
       
-      // Send the update to the API
-      await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
+      console.log("Sending update to backend:", updateData);
       
-      // Update the meal plans state
+      // Send the update to the API
+      const updatedPlan = await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
+      console.log("Received updated plan from backend:", updatedPlan);
+      
+      // Update the meal plans state immediately
       setMealPlans(prevPlans => 
         prevPlans.map(plan => 
           plan.id === mealPlanId ? { ...plan, days: updatedDays } : plan
         )
       );
       
+      // Show success message
+      toast.success(t('success.recipeAddedToMealPlan', 'Recipe added to meal plan'));
+      
       return true;
     } catch (error) {
       console.error('Error adding recipe to meal plan:', error);
+      toast.error(t('errors.failedToUpdateMealPlan', 'Failed to add recipe to meal plan'));
       return false;
     }
-  }, [mealPlans, user, t]);
+  }, [mealPlans, user, t, toast]);
 
   useEffect(() => {
     if (user) {

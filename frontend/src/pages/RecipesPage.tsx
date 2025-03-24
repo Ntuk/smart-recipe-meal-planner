@@ -159,11 +159,13 @@ const RecipesPage = () => {
         {
           id: recipe.id,
           name: recipe.title,
+          title: recipe.title,
           prep_time: recipe.prep_time_minutes,
           cook_time: recipe.cook_time_minutes,
           servings: recipe.servings,
-          ingredients: ingredientsForMealPlan
-        },
+          ingredients: ingredientsForMealPlan,
+          image_url: recipe.image_url
+        } as any, // Cast to any to avoid type errors
         state.mealTime,
         state.selectedDay
       );

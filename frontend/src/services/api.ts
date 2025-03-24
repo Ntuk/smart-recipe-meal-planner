@@ -51,11 +51,25 @@ const shoppingListApi = axios.create({
     (config) => {
       const token = localStorage.getItem('auth_token');
       if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+        config.headers['Authorization'] = `Bearer ${token}`;
       }
       return config;
     },
     (error) => Promise.reject(error)
+  );
+});
+
+// Add response interceptor for debugging
+[mealPlanningApi].forEach(instance => {
+  instance.interceptors.response.use(
+    (response) => {
+      console.log(`API Response for ${response.config.url}:`, response.data);
+      return response;
+    },
+    (error) => {
+      console.error(`API Error for ${error.config?.url}:`, error);
+      return Promise.reject(error);
+    }
   );
 });
 
@@ -287,44 +301,46 @@ export const mealPlanningApiService = {
   // Create a meal plan
   createMealPlan: async (mealPlan: {
     name: string;
-    start_date: string;
-    end_date: string;
     days: Array<{
       date: string;
       meals: Array<{
         name: string;
         time?: string;
         recipes: any[];
-        notes?: string;
       }>;
-      notes?: string;
     }>;
-    notes?: string;
     dietary_preferences?: string[];
     available_ingredients?: string[];
+    start_date: string;
+    end_date: string;
+    skip_recipe_assignment?: boolean;
   }) => {
     try {
-      // Create a minimal plan structure - only what's absolutely necessary
-      const minimalPlan = {
-        name: mealPlan.name,
-        start_date: mealPlan.start_date,
-        end_date: mealPlan.end_date,
+      // Ensure all recipe arrays are initialized to empty arrays
+      const sanitizedMealPlan = {
+        ...mealPlan,
         days: mealPlan.days.map(day => ({
-          date: day.date,
+          ...day,
           meals: day.meals.map(meal => ({
-            name: meal.name,
-            time: meal.time || "",
-            recipes: [] // Empty array to avoid serialization issues
+            ...meal,
+            recipes: [] // Always send empty recipes array
           }))
         })),
-        dietary_preferences: mealPlan.dietary_preferences || [],
-        available_ingredients: mealPlan.available_ingredients || []
+        skip_recipe_assignment: true // Always skip recipe assignment from backend
       };
       
-      console.log('Sending minimal meal plan:', minimalPlan);
+      console.log('Sending minimal meal plan:', sanitizedMealPlan);
       
-      const response = await mealPlanningApi.post('/api/v1/meal-plans', minimalPlan);
-      console.log('Response status:', response.status);
+      // Set the Authorization header with the token
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+      
+      mealPlanningApi.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      console.log('Using auth token:', token);
+      
+      const response = await mealPlanningApi.post('/api/v1/meal-plans', sanitizedMealPlan);
       console.log('Response data:', response.data);
       return response.data;
     } catch (error) {
@@ -346,10 +362,26 @@ export const mealPlanningApiService = {
   // Update a meal plan
   updateMealPlan: async (id: string, updateData: any) => {
     try {
+      console.log(`Updating meal plan ${id} with:`, updateData);
+      
+      // Set the Authorization header with the token
+      const token = localStorage.getItem('auth_token');
+      if (!token) {
+        console.error('No authentication token found for meal plan update');
+        throw new Error('No authentication token found');
+      }
+      
+      mealPlanningApi.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      
       const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, updateData);
+      console.log('Meal plan update response:', response.data);
       return response.data;
     } catch (error) {
       console.error('Error updating meal plan:', error);
+      if (axios.isAxiosError(error)) {
+        console.error('Response status:', error.response?.status);
+        console.error('Response data:', error.response?.data);
+      }
       throw error;
     }
   },
