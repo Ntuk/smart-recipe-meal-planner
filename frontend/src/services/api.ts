@@ -137,7 +137,7 @@ export const recipeApiService = {
     return response.data;
   },
   
-  // Get a single recipe by ID
+  // Get a specific recipe by ID
   getRecipe: async (id: string) => {
     const response = await recipeApi.get(`/recipes/${id}`);
     return response.data;
@@ -217,14 +217,15 @@ export const recipeApiService = {
             description: step
           })) :
           [],
-        prep_time: recipe.prep_time || recipe.prep_time_minutes,
-        cook_time: recipe.cook_time || recipe.cook_time_minutes,
-        servings: recipe.servings,
+        prep_time: parseInt(recipe.prep_time) || parseInt(recipe.prep_time_minutes) || 0,
+        cook_time: parseInt(recipe.cook_time) || parseInt(recipe.cook_time_minutes) || 0,
+        servings: parseInt(recipe.servings) || 1,
         tags: recipe.tags,
         cuisine: recipe.cuisine || 'Other',
         difficulty: recipe.difficulty || 'Medium'
       };
       
+      // Call the API to update the recipe
       const response = await recipeApi.put(`/recipes/${id}`, recipeData);
       console.log('Recipe updated in database:', response.data);
       return response.data;

@@ -1,9 +1,17 @@
 // Recipe types
+export interface IngredientItem {
+  name: string;
+  quantity?: string;
+  unit?: string;
+}
+
+export type RecipeIngredient = string | IngredientItem;
+
 export interface Recipe {
   id: string;
   title: string;
   description?: string;
-  ingredients: string[];
+  ingredients: RecipeIngredient[];
   instructions: string[];
   prep_time_minutes: number;
   cook_time_minutes: number;
@@ -22,7 +30,7 @@ export interface Recipe {
 export interface RecipeCreate {
   title: string;
   description?: string;
-  ingredients: string[];
+  ingredients: RecipeIngredient[];
   instructions: string[];
   prep_time_minutes: number;
   cook_time_minutes: number;

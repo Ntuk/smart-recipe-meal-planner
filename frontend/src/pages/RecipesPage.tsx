@@ -2,62 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useMealPlanning } from '../hooks/useMealPlanning';
-import { Recipe } from '../types';
+import { Recipe, IngredientItem, RecipeIngredient } from '../types';
 import { toast } from 'react-hot-toast';
 import { recipeApiService } from '../services/api';
-
-// Mock recipe data
-const MOCK_RECIPES = [
-  {
-    id: '1',
-    title: 'Spaghetti Carbonara',
-    description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
-    ingredients: ['Spaghetti', 'Eggs', 'Pancetta', 'Parmesan cheese', 'Black pepper', 'Salt'],
-    instructions: ['Cook spaghetti according to package instructions', 'Mix eggs and cheese', 'Cook pancetta', 'Combine all ingredients'],
-    prep_time_minutes: 10,
-    cook_time_minutes: 15,
-    servings: 4,
-    tags: ['Italian', 'Pasta', 'Quick'],
-    cuisine: 'Italian',
-    difficulty: 'Easy',
-  },
-  {
-    id: '2',
-    title: 'Chicken Stir Fry',
-    description: 'A quick and healthy stir fry with chicken and vegetables.',
-    ingredients: ['Chicken breast', 'Bell peppers', 'Broccoli', 'Carrots', 'Soy sauce', 'Garlic', 'Ginger'],
-    prep_time_minutes: 15,
-    cook_time_minutes: 10,
-    servings: 4,
-    tags: ['Asian', 'Chicken', 'Quick', 'Healthy'],
-    cuisine: 'Asian',
-    difficulty: 'Easy',
-  },
-  {
-    id: '3',
-    title: 'Vegetable Curry',
-    description: 'A flavorful vegetarian curry with mixed vegetables and spices.',
-    ingredients: ['Potatoes', 'Carrots', 'Peas', 'Cauliflower', 'Curry powder', 'Coconut milk', 'Onion', 'Garlic'],
-    prep_time_minutes: 20,
-    cook_time_minutes: 30,
-    servings: 6,
-    tags: ['Indian', 'Vegetarian', 'Spicy'],
-    cuisine: 'Indian',
-    difficulty: 'Medium',
-  },
-  {
-    id: '4',
-    title: 'Greek Salad',
-    description: 'A refreshing salad with tomatoes, cucumbers, olives, and feta cheese.',
-    ingredients: ['Tomatoes', 'Cucumber', 'Red onion', 'Feta cheese', 'Kalamata olives', 'Olive oil', 'Lemon juice'],
-    prep_time_minutes: 15,
-    cook_time_minutes: 0,
-    servings: 4,
-    tags: ['Greek', 'Salad', 'Vegetarian', 'No-cook'],
-    cuisine: 'Greek',
-    difficulty: 'Easy',
-  },
-];
 
 interface LocationState {
   forMealPlan?: string;
@@ -74,7 +21,7 @@ const convertApiRecipeToAppFormat = (apiRecipe: any): Recipe => {
     description: apiRecipe.description || '',
     ingredients: Array.isArray(apiRecipe.ingredients) 
       ? apiRecipe.ingredients.map((ing: any) => 
-          typeof ing === 'string' ? ing : ing.name || ''
+          typeof ing === 'string' ? ing : (ing.name ? ing : { name: 'Unknown' })
         )
       : [],
     instructions: Array.isArray(apiRecipe.steps) 
@@ -96,12 +43,12 @@ const RecipesPage = () => {
   const state = location.state as LocationState;
   const { addRecipeToMealPlan } = useMealPlanning();
   
-  const [recipes, setRecipes] = useState<Recipe[]>(MOCK_RECIPES);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  // Check for recipes from various sources when component mounts
+  // Fetch recipes from API when component mounts
   useEffect(() => {
     const fetchRecipes = async () => {
       try {
@@ -114,31 +61,20 @@ const RecipesPage = () => {
           if (Array.isArray(apiRecipes) && apiRecipes.length > 0) {
             // Convert API format to our app's Recipe format
             const formattedApiRecipes = apiRecipes.map(convertApiRecipeToAppFormat);
-            setRecipes(prev => {
-              // Filter out any recipes that might be duplicates by ID
-              const existingIds = prev.map(r => r.id);
-              const newRecipes = formattedApiRecipes.filter(r => !existingIds.includes(r.id));
-              return [...prev, ...newRecipes];
-            });
+            setRecipes(formattedApiRecipes);
           }
         } catch (apiError) {
           console.error('Error fetching recipes from API:', apiError);
-        }
-        
-        // Then check localStorage for user-created recipes as a fallback
-        const storedRecipesJson = localStorage.getItem('user_created_recipes');
-        if (storedRecipesJson) {
-          const storedRecipes = JSON.parse(storedRecipesJson);
-          if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
-            
-            // Convert API format to our app's Recipe format and add to recipes state
-            const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
-            setRecipes(prev => {
-              // Filter out any recipes that might be duplicates by ID
-              const existingIds = prev.map(r => r.id);
-              const newRecipes = formattedRecipes.filter(r => !existingIds.includes(r.id));
-              return [...prev, ...newRecipes];
-            });
+          
+          // Check localStorage for user-created recipes as a fallback
+          const storedRecipesJson = localStorage.getItem('user_created_recipes');
+          if (storedRecipesJson) {
+            const storedRecipes = JSON.parse(storedRecipesJson);
+            if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
+              // Convert to our app's Recipe format
+              const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
+              setRecipes(formattedRecipes);
+            }
           }
         }
         
@@ -174,11 +110,18 @@ const RecipesPage = () => {
   const difficulties = [...new Set(recipes.map(recipe => recipe.difficulty))];
   const allTags = [...new Set(recipes.flatMap(recipe => recipe.tags))];
 
+  // Helper function to get ingredient name regardless of format
+  const getIngredientName = (ingredient: RecipeIngredient): string => {
+    return typeof ingredient === 'string' ? ingredient : ingredient.name;
+  };
+
   // Filter recipes based on search term and filters
   const filteredRecipes = recipes.filter(recipe => {
     const matchesSearch = searchQuery === '' || 
       recipe.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      recipe.ingredients.some(ingredient => ingredient.toLowerCase().includes(searchQuery.toLowerCase()));
+      recipe.ingredients.some(ingredient => 
+        getIngredientName(ingredient).toLowerCase().includes(searchQuery.toLowerCase())
+      );
     
     const matchesTags = selectedTags.length === 0 || 
       selectedTags.every(tag => recipe.tags.includes(tag));
@@ -204,6 +147,11 @@ const RecipesPage = () => {
     }
 
     try {
+      // Convert ingredients to the format expected by the meal planning service
+      const ingredientsForMealPlan = recipe.ingredients.map(ing => 
+        typeof ing === 'string' ? { name: ing } : ing
+      );
+
       const success = await addRecipeToMealPlan(
         state.forMealPlan,
         {
@@ -212,7 +160,7 @@ const RecipesPage = () => {
           prep_time: recipe.prep_time_minutes,
           cook_time: recipe.cook_time_minutes,
           servings: recipe.servings,
-          ingredients: recipe.ingredients
+          ingredients: ingredientsForMealPlan
         },
         state.mealTime,
         state.selectedDay
@@ -258,6 +206,12 @@ const RecipesPage = () => {
                 </p>
               )}
             </div>
+            <Link
+              to="/recipes/new"
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              {t('recipes.createNew', 'Create Recipe')}
+            </Link>
           </div>
         </div>
 
@@ -301,30 +255,50 @@ const RecipesPage = () => {
 
         {/* Recipe Grid */}
         <div className="mt-6 grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredRecipes.map((recipe) => (
-            <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="p-6">
-                <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
-                <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
-                <div className="mt-4 flex space-x-2">
-                  <Link
-                    to={`/recipes/${recipe.id}`}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                  >
-                    {t('recipes.viewRecipe', 'View Recipe')}
-                  </Link>
-                  <button
-                    onClick={() => handleAddToMealPlan(recipe)}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  >
-                    {state?.forMealPlan 
-                      ? t('recipes.addToMealTime', 'Add to {{mealTime}}', { mealTime: state.mealTime })
-                      : t('recipes.addToMealPlan', 'Add to Meal Plan')}
-                  </button>
+          {isLoading ? (
+            <div className="col-span-3 flex justify-center items-center py-12">
+              <p className="text-gray-500">{t('common.loading')}</p>
+            </div>
+          ) : filteredRecipes.length > 0 ? (
+            filteredRecipes.map((recipe) => (
+              <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="p-6">
+                  <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
+                  <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>
+                  <div className="mt-4 flex space-x-2">
+                    <Link
+                      to={`/recipes/${recipe.id}`}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      {t('recipes.viewRecipe', 'View Recipe')}
+                    </Link>
+                    <button
+                      onClick={() => handleAddToMealPlan(recipe)}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      {state?.forMealPlan 
+                        ? t('recipes.addToMealTime', 'Add to {{mealTime}}', { mealTime: state.mealTime })
+                        : t('recipes.addToMealPlan', 'Add to Meal Plan')}
+                    </button>
+                  </div>
                 </div>
               </div>
+            ))
+          ) : (
+            <div className="col-span-3 bg-white overflow-hidden shadow rounded-lg p-6 text-center">
+              <p className="text-gray-500">
+                {t('recipes.noRecipesFound', 'No recipes found. Try creating a new recipe or adjusting your search filters.')}
+              </p>
+              <div className="mt-4">
+                <Link
+                  to="/recipes/new"
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  {t('recipes.createNew', 'Create Recipe')}
+                </Link>
+              </div>
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>

@@ -61,7 +61,11 @@ const MealPlanPage = () => {
               meal.recipes.forEach(recipe => {
                 if (recipe.ingredients) {
                   recipe.ingredients.forEach(ingredient => {
-                    allIngredients.add(ingredient.name);
+                    // Handle both string and object ingredients
+                    const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
+                    if (ingredientName) {
+                      allIngredients.add(ingredientName);
+                    }
                   });
                 }
               });
@@ -92,7 +96,11 @@ const MealPlanPage = () => {
               meal.recipes.forEach(recipe => {
                 if (recipe.ingredients) {
                   recipe.ingredients.forEach(ingredient => {
-                    allIngredients.add(ingredient.name);
+                    // Handle both string and object ingredients
+                    const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
+                    if (ingredientName) {
+                      allIngredients.add(ingredientName);
+                    }
                   });
                 }
               });
@@ -167,9 +175,12 @@ const MealPlanPage = () => {
         meal.recipes.forEach(recipe => {
           if (recipe.ingredients) {
             recipe.ingredients.forEach(ingredient => {
+              // Handle both string and object ingredients
+              const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
+              
               // Check if this ingredient is in our available ingredients
-              if (!availableIngredients.includes(ingredient.name)) {
-                missingIngredientsSet.add(ingredient.name);
+              if (ingredientName && !availableIngredients.includes(ingredientName)) {
+                missingIngredientsSet.add(ingredientName);
               }
             });
           }
@@ -587,7 +598,9 @@ const MealPlanPage = () => {
                     <p>
                       {new Date(mealPlan.start_date).toLocaleDateString()} to {new Date(mealPlan.end_date).toLocaleDateString()}
                     </p>
-                    {mealPlan.notes && <p className="mt-1">{mealPlan.notes}</p>}
+                    {mealPlan && 'notes' in mealPlan && mealPlan.notes && (
+                      <p className="mt-1">{mealPlan.notes}</p>
+                    )}
                   </div>
                   
                   <div className="mt-6">
@@ -706,7 +719,7 @@ const MealPlanPage = () => {
                         <ul className="list-disc pl-5 space-y-1">
                           {missingIngredients.map((ingredient, index) => (
                             <li key={index} className="text-sm text-red-700">
-                              {translateIngredientName(ingredient.charAt(0).toUpperCase() + ingredient.slice(1))}
+                              {ingredient && translateIngredientName(ingredient.charAt(0).toUpperCase() + ingredient.slice(1))}
                             </li>
                           ))}
                         </ul>

@@ -31,100 +31,26 @@ const EditRecipePage: React.FC = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [difficulty, setDifficulty] = useState('Easy');
   
-  // Fetch recipe data when component mounts
   useEffect(() => {
     if (!id) {
-      setError('Recipe ID is required');
+      setError('Recipe ID is missing');
       setInitialLoading(false);
       return;
     }
     
     const loadRecipe = async () => {
-      setInitialLoading(true);
-      
       try {
-        // First check localStorage for the recipe
-        let foundRecipe: any = null;
+        let foundRecipe = null;
         
-        // Check in user_created_recipes
-        const userRecipesJson = localStorage.getItem('user_created_recipes');
-        if (userRecipesJson) {
-          const userRecipes = JSON.parse(userRecipesJson);
-          const userRecipe = userRecipes.find((r: any) => r.id === id);
-          
-          if (userRecipe) {
-            console.log('Found recipe in localStorage:', userRecipe);
-            foundRecipe = userRecipe;
-          }
-        }
-        
-        // If not found in localStorage, check mock recipes
-        if (!foundRecipe) {
-          // Try to get from API (would work in real implementation)
-          try {
-            // This would be the real implementation
-            // foundRecipe = await recipeApiService.getRecipe(id);
-            
-            // For demo, simulate fetching from a mock API
-            await new Promise(resolve => setTimeout(resolve, 300));
-            
-            // Check if it's one of the mock recipes by ID
-            // This is just hardcoded for the demo - in real app would need proper mock data handling
-            if (id === '1') {
-              foundRecipe = {
-                id: '1',
-                name: 'Spaghetti Carbonara',
-                description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
-                ingredients: [
-                  { name: 'Spaghetti', quantity: '400', unit: 'g' },
-                  { name: 'Eggs', quantity: '4', unit: '' },
-                  { name: 'Pancetta', quantity: '150', unit: 'g' },
-                  { name: 'Parmesan cheese', quantity: '50', unit: 'g' },
-                  { name: 'Black pepper', quantity: '2', unit: 'tsp' },
-                  { name: 'Salt', quantity: '1', unit: 'tsp' }
-                ],
-                steps: [
-                  'Cook spaghetti according to package instructions.',
-                  'In a bowl, whisk eggs and grated cheese.',
-                  'Cook pancetta until crispy.',
-                  'Combine pasta, egg mixture, and pancetta. Toss quickly.',
-                  'Season with black pepper and serve immediately.'
-                ],
-                prep_time: 10,
-                cook_time: 15,
-                servings: 4,
-                tags: ['Italian', 'Pasta', 'Quick'],
-                cuisine: 'Italian',
-                difficulty: 'Easy',
-              };
-            } else if (id === '5') {
-              foundRecipe = {
-                id: '5',
-                name: 'Energizing fruit smoothie',
-                description: '',
-                ingredients: [
-                  { name: 'Frozen berries', quantity: '1', unit: 'cup' },
-                  { name: 'Banana', quantity: '1', unit: '' },
-                  { name: 'Yogurt', quantity: '1/2', unit: 'cup' },
-                  { name: 'Honey', quantity: '1', unit: 'tbsp' },
-                  { name: 'Orange juice', quantity: '1/2', unit: 'cup' }
-                ],
-                steps: [
-                  'Add all ingredients to a blender.',
-                  'Blend until smooth.',
-                  'Pour into a glass and enjoy immediately.'
-                ],
-                prep_time: 5,
-                cook_time: 0,
-                servings: 1,
-                tags: ['Breakfast', 'Smoothie', 'Quick', 'No-cook'],
-                cuisine: 'International',
-                difficulty: 'Easy',
-              };
-            }
-          } catch (err) {
-            console.error('Error fetching recipe from API:', err);
-          }
+        // Fetch recipe from API
+        try {
+          foundRecipe = await recipeApiService.getRecipe(id);
+          console.log('Recipe loaded from API:', foundRecipe);
+        } catch (err) {
+          console.error('Error fetching recipe from API:', err);
+          setError('Failed to load recipe. The recipe might not exist or there was a network error.');
+          setInitialLoading(false);
+          return;
         }
         
         if (!foundRecipe) {
@@ -158,9 +84,25 @@ const EditRecipePage: React.FC = () => {
         
         // Handle instructions/steps
         if (Array.isArray(foundRecipe.steps)) {
-          setInstructions(foundRecipe.steps.join('\n'));
+          // Check if steps are objects or strings
+          if (foundRecipe.steps.length > 0 && typeof foundRecipe.steps[0] === 'object') {
+            // Handle steps that are objects with a description field
+            setInstructions(foundRecipe.steps.map(step => 
+              step.description || JSON.stringify(step)
+            ).join('\n'));
+          } else {
+            // Handle steps that are already strings
+            setInstructions(foundRecipe.steps.join('\n'));
+          }
         } else if (Array.isArray(foundRecipe.instructions)) {
-          setInstructions(foundRecipe.instructions.join('\n'));
+          // Similar check for instructions
+          if (foundRecipe.instructions.length > 0 && typeof foundRecipe.instructions[0] === 'object') {
+            setInstructions(foundRecipe.instructions.map(instruction => 
+              instruction.description || JSON.stringify(instruction)
+            ).join('\n'));
+          } else {
+            setInstructions(foundRecipe.instructions.join('\n'));
+          }
         }
         
         // Set other fields
@@ -169,8 +111,35 @@ const EditRecipePage: React.FC = () => {
         setServings(String(foundRecipe.servings || ''));
         
         // Handle tags
+        let tagsList: string[] = [];
+        
+        // Add existing tags if available
         if (Array.isArray(foundRecipe.tags)) {
-          setTags(foundRecipe.tags.join(', '));
+          // Make sure tags is not empty and contains actual string values
+          const validTags = foundRecipe.tags.filter(tag => tag && typeof tag === 'string');
+          if (validTags.length > 0) {
+            tagsList = [...validTags];
+          }
+        }
+        
+        // Add cuisine as a tag if available and not already in tags
+        if (foundRecipe.cuisine && typeof foundRecipe.cuisine === 'string' && foundRecipe.cuisine !== 'Other') {
+          if (!tagsList.includes(foundRecipe.cuisine)) {
+            tagsList.push(foundRecipe.cuisine);
+          }
+        }
+        
+        // Add category as a tag if available and not already in tags
+        if (foundRecipe.category && typeof foundRecipe.category === 'string') {
+          if (!tagsList.includes(foundRecipe.category)) {
+            tagsList.push(foundRecipe.category);
+          }
+        }
+        
+        // Set tags if we have any
+        if (tagsList.length > 0) {
+          setTags(tagsList.join(', '));
+          console.log('Setting tags:', tagsList.join(', '));
         }
         
         // Handle difficulty
@@ -189,49 +158,47 @@ const EditRecipePage: React.FC = () => {
   
   const handleAddIngredient = () => {
     if (newIngredient.name.trim()) {
-      setIngredients([
-        ...ingredients,
-        {
-          name: newIngredient.name.trim(),
-          quantity: newIngredient.quantity.trim() || null,
-          unit: newIngredient.unit.trim() || null,
-        },
-      ]);
+      setIngredients([...ingredients, newIngredient]);
       setNewIngredient({ name: '', quantity: '', unit: '' });
     }
   };
   
   const handleRemoveIngredient = (index: number) => {
-    const updatedIngredients = [...ingredients];
-    updatedIngredients.splice(index, 1);
-    setIngredients(updatedIngredients);
+    setIngredients(ingredients.filter((_, i) => i !== index));
   };
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validation
     if (!title.trim()) {
-      setError(t('recipes.titleRequired', 'Title is required'));
+      setError(t('recipes.errorTitleRequired', 'Recipe title is required'));
       return;
     }
+
+    // Make sure we have at least a minimal value for prep_time and cook_time
+    const validPrepTime = parseInt(prepTime) || 0;
+    const validCookTime = parseInt(cookTime) || 0;
+    const validServings = parseInt(servings) || 1;
     
-    if (ingredients.length === 0) {
-      setError(t('recipes.ingredientsRequired', 'At least one ingredient is required'));
-      return;
-    }
+    setPrepTime(String(validPrepTime));
+    setCookTime(String(validCookTime));
+    setServings(String(validServings));
     
-    if (!instructions.trim()) {
-      setError(t('recipes.instructionsRequired', 'Instructions are required'));
-      return;
-    }
-    
-    setLoading(true);
     setError(null);
+    setLoading(true);
     
     try {
       if (!id) {
         throw new Error('Recipe ID is missing');
       }
+      
+      // Process tags - convert comma-separated string to array, trim whitespace, filter empty strings
+      const tagArray = tags.split(',')
+        .map(tag => tag.trim())
+        .filter(tag => tag.length > 0);
+        
+      console.log('Processed tags for submission:', tagArray);
       
       // Format the recipe data for the API
       const recipeData = {
@@ -242,11 +209,16 @@ const EditRecipePage: React.FC = () => {
           quantity: ing.quantity || '',
           unit: ing.unit || ''
         })),
-        steps: instructions.split('\n').filter(step => step.trim()),
-        prep_time: parseInt(prepTime) || 0,
-        cook_time: parseInt(cookTime) || 0,
-        servings: parseInt(servings) || 1,
-        tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+        steps: instructions.split('\n')
+          .filter(step => step.trim())
+          .map((step, index) => ({
+            number: index + 1,
+            description: step.trim()
+          })),
+        prep_time: validPrepTime,
+        cook_time: validCookTime,
+        servings: validServings,
+        tags: tagArray,
         difficulty: difficulty,
       };
       
@@ -258,7 +230,6 @@ const EditRecipePage: React.FC = () => {
       
       // Show success message
       toast.success('Recipe updated successfully!');
-      
       // Navigate back to recipe detail
       navigate(`/recipes/${id}`);
     } catch (err) {
@@ -298,10 +269,10 @@ const EditRecipePage: React.FC = () => {
                 </div>
               )}
               
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div>
+              <form onSubmit={handleSubmit}>
+                <div className="mb-6">
                   <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-                    {t('recipes.title', 'Recipe Title')}
+                    {t('recipes.recipeTitle', 'Recipe Title')}
                   </label>
                   <div className="mt-1">
                     <input
@@ -310,99 +281,110 @@ const EditRecipePage: React.FC = () => {
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      placeholder="Enter recipe name"
+                      placeholder={t('recipes.enterRecipeName', 'Enter recipe name')}
                     />
                   </div>
                 </div>
                 
-                <div>
+                <div className="mb-6">
                   <label htmlFor="description" className="block text-sm font-medium text-gray-700">
                     {t('recipes.description', 'Description')}
                   </label>
                   <div className="mt-1">
                     <textarea
                       id="description"
-                      rows={3}
                       value={description}
                       onChange={(e) => setDescription(e.target.value)}
+                      rows={3}
                       className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      placeholder="Briefly describe your recipe"
+                      placeholder={t('recipes.brieflyDescribeYourRecipe', 'Briefly describe your recipe')}
                     />
                   </div>
                 </div>
                 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     {t('recipes.ingredients', 'Ingredients')}
                   </label>
                   
-                  <div className="mt-2 space-y-2">
+                  <div className="grid grid-cols-3 gap-4 mb-2">
+                    <div className="col-span-1">
+                      <label className="sr-only">{t('recipes.ingredientName', 'Ingredient name')}</label>
+                      <input
+                        type="text"
+                        value={newIngredient.name}
+                        onChange={(e) => setNewIngredient({...newIngredient, name: e.target.value})}
+                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                        placeholder={t('recipes.ingredientName', 'Ingredient name')}
+                      />
+                    </div>
+                    <div>
+                      <label className="sr-only">{t('recipes.quantity', 'Quantity')}</label>
+                      <input
+                        type="text"
+                        value={newIngredient.quantity || ''}
+                        onChange={(e) => setNewIngredient({...newIngredient, quantity: e.target.value})}
+                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                        placeholder={t('recipes.quantity', 'Quantity')}
+                      />
+                    </div>
+                    <div className="flex">
+                      <div className="flex-grow">
+                        <label className="sr-only">{t('recipes.unit', 'Unit')}</label>
+                        <input
+                          type="text"
+                          value={newIngredient.unit || ''}
+                          onChange={(e) => setNewIngredient({...newIngredient, unit: e.target.value})}
+                          className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                          placeholder={t('recipes.unit', 'Unit')}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddIngredient}
+                        className="ml-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      >
+                        {t('common.add', 'Add')}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 space-y-2 max-h-64 overflow-y-auto">
                     {ingredients.map((ingredient, index) => (
-                      <div key={index} className="flex items-center">
-                        <span className="flex-grow">{ingredient.name} {ingredient.quantity && `(${ingredient.quantity} ${ingredient.unit || ''})`}</span>
+                      <div key={index} className="flex items-center bg-gray-50 p-2 rounded">
+                        <span className="flex-grow">
+                          {ingredient.quantity && `${ingredient.quantity} `}
+                          {ingredient.unit && `${ingredient.unit} `}
+                          {ingredient.name}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleRemoveIngredient(index)}
-                          className="ml-2 text-red-600 hover:text-red-800"
+                          className="text-red-500 hover:text-red-700"
                         >
-                          {t('common.delete', 'Delete')}
+                          {t('common.remove', 'Remove')}
                         </button>
                       </div>
                     ))}
                   </div>
-                  
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    <div>
-                      <input
-                        type="text"
-                        placeholder={t('recipes.ingredientName', 'Ingredient name')}
-                        value={newIngredient.name}
-                        onChange={(e) => setNewIngredient({ ...newIngredient, name: e.target.value })}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder={t('recipes.quantity', 'Quantity')}
-                        value={newIngredient.quantity}
-                        onChange={(e) => setNewIngredient({ ...newIngredient, quantity: e.target.value })}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder={t('recipes.unit', 'Unit')}
-                        value={newIngredient.unit}
-                        onChange={(e) => setNewIngredient({ ...newIngredient, unit: e.target.value })}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      />
-                    </div>
-                  </div>
-                  
-                  <button
-                    type="button"
-                    onClick={handleAddIngredient}
-                    className="mt-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    {t('recipes.addIngredient', 'Add Ingredient')}
-                  </button>
                 </div>
                 
-                <div>
+                <div className="mb-6">
                   <label htmlFor="instructions" className="block text-sm font-medium text-gray-700">
                     {t('recipes.instructions', 'Instructions')}
                   </label>
                   <div className="mt-1">
                     <textarea
                       id="instructions"
-                      rows={6}
                       value={instructions}
                       onChange={(e) => setInstructions(e.target.value)}
-                      placeholder={t('recipes.instructionsPlaceholder', 'Enter each step on a new line')}
+                      rows={6}
                       className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      placeholder={t('recipes.enterStepByStepInstructions', 'Enter step-by-step instructions')}
                     />
+                    <p className="mt-1 text-sm text-gray-500">
+                      {t('recipes.instructionsHint', 'Enter each step on a new line')}
+                    </p>
                   </div>
                 </div>
                 
@@ -456,7 +438,7 @@ const EditRecipePage: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
+                <div className="mt-6 grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-2">
                   <div>
                     <label htmlFor="tags" className="block text-sm font-medium text-gray-700">
                       {t('recipes.tags', 'Tags')}
@@ -467,8 +449,8 @@ const EditRecipePage: React.FC = () => {
                         id="tags"
                         value={tags}
                         onChange={(e) => setTags(e.target.value)}
-                        placeholder={t('recipes.tagsPlaceholder', 'e.g., Italian, Pasta, Quick (comma separated)')}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                        placeholder={t('recipes.commaSeperatedTags', 'Comma-separated tags (e.g. Italian, Pasta, Quick)')}
                       />
                     </div>
                   </div>
@@ -484,9 +466,9 @@ const EditRecipePage: React.FC = () => {
                         onChange={(e) => setDifficulty(e.target.value)}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                       >
-                        <option value="Easy">Easy</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Hard">Hard</option>
+                        <option value="Easy">{t('recipes.difficultyEasy', 'Easy')}</option>
+                        <option value="Medium">{t('recipes.difficultyMedium', 'Medium')}</option>
+                        <option value="Hard">{t('recipes.difficultyHard', 'Hard')}</option>
                       </select>
                     </div>
                   </div>

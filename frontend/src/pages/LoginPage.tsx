@@ -1,50 +1,51 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useAuthContext } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const { login } = useAuth();
+  const { login, isLoading } = useAuthContext();
   const navigate = useNavigate();
   const { t } = useTranslation();
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null); // Clear any previous errors
+    setLoginError(null); // Clear any previous errors
     
     // Basic validation
     if (!email.trim()) {
-      setError(t('auth.email') + ' ' + t('common.error'));
+      setLoginError(t('auth.email') + ' ' + t('common.error'));
       return;
     }
     
     if (!password.trim()) {
-      setError(t('auth.password') + ' ' + t('common.error'));
+      setLoginError(t('auth.password') + ' ' + t('common.error'));
       return;
     }
     
-    setIsLoading(true);
+    setIsSubmitting(true);
     try {
       const result = await login({ email, password });
       if (result.success) {
-        navigate('/');
+        // Successfully logged in, navigate to home page
+        navigate('/', { replace: true });
       }
     } catch (err: any) {
       console.error('Login error:', err);
       if (err.response?.status === 401) {
-        setError('Invalid email or password');
+        setLoginError('Invalid email or password');
       } else if (err.response?.status === 422) {
-        setError('Please check your email format and password (minimum 6 characters)');
+        setLoginError('Please check your email format and password (minimum 6 characters)');
       } else {
-        setError('An error occurred during login. Please try again.');
+        setLoginError('An error occurred during login. Please try again.');
       }
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
   
@@ -64,11 +65,11 @@ const LoginPage: React.FC = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          {error && (
+          {loginError && (
             <div className="rounded-md bg-red-50 p-4 mb-4">
               <div className="flex">
                 <div className="ml-3">
-                  <h3 className="text-sm font-medium text-red-800">{error}</h3>
+                  <h3 className="text-sm font-medium text-red-800">{loginError}</h3>
                 </div>
               </div>
             </div>
@@ -133,10 +134,10 @@ const LoginPage: React.FC = () => {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isSubmitting || isLoading}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? t('common.loading') : t('common.login')}
+                {isSubmitting || isLoading ? t('common.loading') : t('common.login')}
               </button>
             </div>
           </form>

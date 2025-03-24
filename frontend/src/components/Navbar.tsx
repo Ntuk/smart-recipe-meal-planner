@@ -36,46 +36,52 @@ const Navbar = () => {
             >
               {t('navigation.home')}
             </Link>
-            <Link
-              to="/recipes"
-              className={`${
-                isActive('/recipes') 
-                  ? 'border-blue-500 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } px-3 py-2 text-sm font-medium border-b-2`}
-            >
-              {t('navigation.recipes')}
-            </Link>
-            <Link
-              to="/scan"
-              className={`${
-                isActive('/scan') 
-                  ? 'border-blue-500 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } px-3 py-2 text-sm font-medium border-b-2`}
-            >
-              {t('navigation.scanIngredients')}
-            </Link>
-            <Link
-              to="/meal-plan"
-              className={`${
-                isActive('/meal-plan') 
-                  ? 'border-blue-500 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } px-3 py-2 text-sm font-medium border-b-2`}
-            >
-              {t('navigation.mealPlans')}
-            </Link>
-            <Link
-              to="/shopping-list"
-              className={`${
-                isActive('/shopping-list') 
-                  ? 'border-blue-500 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              } px-3 py-2 text-sm font-medium border-b-2`}
-            >
-              {t('navigation.shoppingLists')}
-            </Link>
+            
+            {/* Only show these links if authenticated */}
+            {isAuthenticated && (
+              <>
+                <Link
+                  to="/recipes"
+                  className={`${
+                    isActive('/recipes') 
+                      ? 'border-blue-500 text-gray-900' 
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } px-3 py-2 text-sm font-medium border-b-2`}
+                >
+                  {t('navigation.recipes')}
+                </Link>
+                <Link
+                  to="/scan"
+                  className={`${
+                    isActive('/scan') 
+                      ? 'border-blue-500 text-gray-900' 
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } px-3 py-2 text-sm font-medium border-b-2`}
+                >
+                  {t('navigation.scanIngredients')}
+                </Link>
+                <Link
+                  to="/meal-plan"
+                  className={`${
+                    isActive('/meal-plan') 
+                      ? 'border-blue-500 text-gray-900' 
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } px-3 py-2 text-sm font-medium border-b-2`}
+                >
+                  {t('navigation.mealPlans')}
+                </Link>
+                <Link
+                  to="/shopping-list"
+                  className={`${
+                    isActive('/shopping-list') 
+                      ? 'border-blue-500 text-gray-900' 
+                      : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                  } px-3 py-2 text-sm font-medium border-b-2`}
+                >
+                  {t('navigation.shoppingLists')}
+                </Link>
+              </>
+            )}
 
             {/* Desktop auth buttons */}
             {!isAuthenticated ? (
@@ -182,50 +188,56 @@ const Navbar = () => {
           >
             {t('navigation.home')}
           </Link>
-          <Link
-            to="/recipes"
-            className={`${
-              isActive('/recipes') 
-                ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
-                : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 text-base font-medium`}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            {t('navigation.recipes')}
-          </Link>
-          <Link
-            to="/scan"
-            className={`${
-              isActive('/scan') 
-                ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
-                : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 text-base font-medium`}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            {t('navigation.scanIngredients')}
-          </Link>
-          <Link
-            to="/meal-plan"
-            className={`${
-              isActive('/meal-plan') 
-                ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
-                : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 text-base font-medium`}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            {t('navigation.mealPlans')}
-          </Link>
-          <Link
-            to="/shopping-list"
-            className={`${
-              isActive('/shopping-list') 
-                ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
-                : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 text-base font-medium`}
-            onClick={() => setIsMenuOpen(false)}
-          >
-            {t('navigation.shoppingLists')}
-          </Link>
+          
+          {/* Only show these links if authenticated in mobile view */}
+          {isAuthenticated && (
+            <>
+              <Link
+                to="/recipes"
+                className={`${
+                  isActive('/recipes') 
+                    ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
+                    : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                } block pl-3 pr-4 py-2 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {t('navigation.recipes')}
+              </Link>
+              <Link
+                to="/scan"
+                className={`${
+                  isActive('/scan') 
+                    ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
+                    : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                } block pl-3 pr-4 py-2 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {t('navigation.scanIngredients')}
+              </Link>
+              <Link
+                to="/meal-plan"
+                className={`${
+                  isActive('/meal-plan') 
+                    ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
+                    : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                } block pl-3 pr-4 py-2 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {t('navigation.mealPlans')}
+              </Link>
+              <Link
+                to="/shopping-list"
+                className={`${
+                  isActive('/shopping-list') 
+                    ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
+                    : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                } block pl-3 pr-4 py-2 text-base font-medium`}
+                onClick={() => setIsMenuOpen(false)}
+              >
+                {t('navigation.shoppingLists')}
+              </Link>
+            </>
+          )}
         </div>
 
         {/* Mobile auth section */}

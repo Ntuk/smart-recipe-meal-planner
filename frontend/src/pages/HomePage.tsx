@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useAuthContext } from '../context/AuthContext';
 
 const HomePage = () => {
   const [count, setCount] = useState(0);
   const { t } = useTranslation();
+  const { isAuthenticated } = useAuthContext();
 
   return (
     <div className="bg-gray-100">
@@ -20,19 +22,38 @@ const HomePage = () => {
             {t('home.description')}
           </p>
           <div className="mt-10 flex justify-center gap-4">
-            <Link 
-              to="/scan" 
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-              onClick={() => setCount(count + 1)}
-            >
-              {t('home.scanIngredients')}
-            </Link>
-            <Link 
-              to="/recipes" 
-              className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-            >
-              {t('home.browseRecipes')}
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link 
+                  to="/scan" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  onClick={() => setCount(count + 1)}
+                >
+                  {t('home.scanIngredients')}
+                </Link>
+                <Link 
+                  to="/recipes" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  {t('home.browseRecipes')}
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link 
+                  to="/login" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  {t('common.login')}
+                </Link>
+                <Link 
+                  to="/register" 
+                  className="inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                >
+                  {t('common.register')}
+                </Link>
+              </>
+            )}
           </div>
         </div>
 

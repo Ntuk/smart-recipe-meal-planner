@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import httpx
 from datetime import datetime, date
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Optional, Union, Any
+from pydantic import BaseModel, Field, root_validator, model_validator
 import logging
 from bson import ObjectId
 import uuid
@@ -56,6 +56,13 @@ class Recipe(BaseModel):
         }
         arbitrary_types_allowed = True
 
+# Add a custom generic type for ingredients to handle both string and dict types
+class IngredientType(BaseModel):
+    name: str
+    quantity: Optional[str] = None
+    unit: Optional[str] = None
+
+# Update the RecipeRef model to handle both types of ingredients
 class RecipeRef(BaseModel):
     id: str
     name: str
@@ -63,7 +70,7 @@ class RecipeRef(BaseModel):
     cook_time: int
     servings: int
     image_url: Optional[str] = None
-    ingredients: List[str] = []
+    ingredients: List[Any] = []  # Can be string or dict
 
     class Config:
         from_attributes = True
@@ -71,6 +78,20 @@ class RecipeRef(BaseModel):
             ObjectId: str
         }
         arbitrary_types_allowed = True
+        
+    @model_validator(mode='after')
+    def normalize_ingredients(self):
+        """Convert all ingredients to string format during validation"""
+        normalized = []
+        for ingredient in self.ingredients:
+            if isinstance(ingredient, dict):
+                # Extract name from dict
+                normalized.append(ingredient.get('name', 'Unknown ingredient'))
+            else:
+                # Already a string or other primitive
+                normalized.append(str(ingredient))
+        self.ingredients = normalized
+        return self
 
 class Meal(BaseModel):
     name: str  # e.g., "Breakfast", "Lunch", "Dinner", "Snack"
@@ -174,7 +195,11 @@ async def select_recipes(
                         cook_time=recipe['cook_time'],
                         servings=recipe['servings'],
                         image_url=recipe.get('image_url'),
-                        ingredients=[ingredient['name'] for ingredient in recipe.get('ingredients', [])]
+                        # Standardize ingredient format - always convert to string list
+                        ingredients=[
+                            ingredient.get('name', ingredient) if isinstance(ingredient, dict) else ingredient
+                            for ingredient in recipe.get('ingredients', [])
+                        ]
                     )
                     for recipe in recipes
                 ]
@@ -305,7 +330,11 @@ async def get_meal_plans(
         cursor = collection.find(query)
         meal_plans = await cursor.to_list(length=None)
         logger.info(f"Found {len(meal_plans)} meal plans: {meal_plans}")
-        return meal_plans
+        
+        # Standardize ingredient format in all meal plans
+        standardized_meal_plans = [standardize_meal_plan_ingredients(plan) for plan in meal_plans]
+        
+        return standardized_meal_plans
     except Exception as e:
         logger.error(f"Error fetching meal plans: {str(e)}")
         raise HTTPException(
@@ -370,7 +399,8 @@ async def get_meal_plan(
                 detail=f"Meal plan {meal_plan_id} not found"
             )
         
-        return meal_plan
+        # Standardize ingredient format before returning
+        return standardize_meal_plan_ingredients(meal_plan)
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -541,4 +571,28 @@ async def delete_meal_plan(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting meal plan: {str(e)}"
-        ) 
+        )
+
+# Add a function to standardize ingredients format in meal plans when returning from database
+def standardize_meal_plan_ingredients(meal_plan_data):
+    """Standardize ingredient format across all recipes in a meal plan"""
+    if not meal_plan_data:
+        return meal_plan_data
+    
+    # Deep copy to avoid modifying the original
+    meal_plan = copy.deepcopy(meal_plan_data)
+    
+    # Process each day, meal, recipe
+    if "days" in meal_plan:
+        for day in meal_plan["days"]:
+            if "meals" in day:
+                for meal in day["meals"]:
+                    if "recipes" in meal:
+                        for recipe in meal["recipes"]:
+                            if "ingredients" in recipe:
+                                # Standardize ingredients to string list
+                                recipe["ingredients"] = [
+                                    ingredient.get('name', ingredient) if isinstance(ingredient, dict) else ingredient
+                                    for ingredient in recipe["ingredients"]
+                                ] 
+    return meal_plan 

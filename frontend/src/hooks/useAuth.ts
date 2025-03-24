@@ -11,6 +11,7 @@ interface AuthState {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  error: string | null;
 }
 
 interface LoginCredentials {
@@ -29,48 +30,58 @@ export const useAuth = () => {
     user: null,
     isAuthenticated: false,
     isLoading: true,
+    error: null,
   });
 
   // Check if user is already logged in
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('auth_token');
-      
-      if (token) {
-        try {
-          // Get user profile from API
-          const userData = await authApiService.getProfile();
-          
-          setAuthState({
-            user: userData,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error) {
-          console.error('Error fetching user profile:', error);
-          // Token might be invalid or expired
-          localStorage.removeItem('auth_token');
-          setAuthState({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-        }
-      } else {
+  const checkAuth = useCallback(async () => {
+    const token = localStorage.getItem('auth_token');
+    
+    if (token) {
+      try {
+        // Get user profile from API
+        const userData = await authApiService.getProfile();
+        
+        setAuthState({
+          user: userData,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null,
+        });
+        return true;
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+        // Token might be invalid or expired
+        localStorage.removeItem('auth_token');
         setAuthState({
           user: null,
           isAuthenticated: false,
           isLoading: false,
+          error: 'Authentication failed',
         });
+        return false;
       }
-    };
-
-    checkAuth();
+    } else {
+      setAuthState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+      });
+      return false;
+    }
   }, []);
+
+  // Check authentication status when component mounts
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   const login = useCallback(async (credentials: LoginCredentials) => {
     try {
       console.log('Attempting login with email:', credentials.email);
+      setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
+      
       const response = await authApiService.login(credentials);
       console.log('Login response:', response);
       
@@ -81,6 +92,7 @@ export const useAuth = () => {
         user: userData,
         isAuthenticated: true,
         isLoading: false,
+        error: null,
       });
       
       return { success: true };
@@ -92,6 +104,12 @@ export const useAuth = () => {
         request: error.config?.data
       });
 
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.response?.data?.detail || 'Login failed',
+      }));
+
       // Throw the error to be caught by the component
       throw error;
     }
@@ -100,6 +118,8 @@ export const useAuth = () => {
   const register = useCallback(async (data: RegisterData) => {
     try {
       console.log('Attempting registration with data:', data);
+      setAuthState(prev => ({ ...prev, isLoading: true, error: null }));
+      
       const response = await authApiService.register(data);
       console.log('Registration response:', response);
       
@@ -115,6 +135,7 @@ export const useAuth = () => {
         user: userData,
         isAuthenticated: true,
         isLoading: false,
+        error: null,
       });
       
       return { success: true };
@@ -125,6 +146,12 @@ export const useAuth = () => {
         status: error.response?.status,
         request: error.config?.data
       });
+
+      setAuthState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: error.response?.data?.detail || 'Registration failed',
+      }));
 
       // Handle specific error cases
       if (error.response?.status === 400) {
@@ -149,6 +176,7 @@ export const useAuth = () => {
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      error: null,
     });
   }, []);
 
@@ -156,8 +184,10 @@ export const useAuth = () => {
     user: authState.user,
     isAuthenticated: authState.isAuthenticated,
     isLoading: authState.isLoading,
+    error: authState.error,
     login,
     register,
     logout,
+    checkAuth,
   };
 }; 
