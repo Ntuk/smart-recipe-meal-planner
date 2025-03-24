@@ -268,43 +268,20 @@ export const mealPlanningApiService = {
   // Update a meal plan
   updateMealPlan: async (id: string, data: any): Promise<MealPlan> => {
     try {
-      console.log('Sending formatted update:', data);
-      
-      // Format the data to match the backend's expectations
-      const formattedUpdate = {
-        days: data.days.map((day: any) => ({
-          date: typeof day.date === 'string' ? day.date : new Date(day.date).toISOString().split('T')[0],
-          meals: day.meals.map((meal: any) => ({
-            name: meal.name,
-            time: meal.time || '',
-            recipes: (meal.recipes || []).map((recipe: any) => ({
-              id: recipe.id,
-              name: recipe.name,
-              prep_time: Number(recipe.prep_time),
-              cook_time: Number(recipe.cook_time),
-              servings: Number(recipe.servings),
-              image_url: recipe.image_url || '',
-              ingredients: Array.isArray(recipe.ingredients) 
-                ? recipe.ingredients.map((ing: any) => 
-                    typeof ing === 'string' ? ing : (ing.name || ''))
-                : []
-            })),
-            notes: meal.notes || ''
-          })),
-          notes: day.notes || ''
-        }))
-      };
+      console.log('Sending update for meal plan:', id);
+      console.log('Update data:', data);
       
       // Remove any undefined values and ensure all required fields are present
-      const cleanFormattedUpdate = JSON.parse(JSON.stringify(formattedUpdate));
-      console.log('Formatted update data:', cleanFormattedUpdate);
+      const cleanData = JSON.parse(JSON.stringify(data));
       
-      // Ensure the data is properly formatted for MongoDB
-      const mongoUpdate = {
-        $set: cleanFormattedUpdate
-      };
+      // Send the data directly - let the backend handle MongoDB formatting
+      console.log('Sending update data:', cleanData);
       
-      const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, mongoUpdate);
+      const response = await mealPlanningApi.put(`/api/v1/meal-plans/${id}`, cleanData);
+      
+      // Log the full response for debugging
+      console.log('Update meal plan response:', response.data);
+      
       return response.data;
     } catch (error) {
       console.error('Error updating meal plan:', error);

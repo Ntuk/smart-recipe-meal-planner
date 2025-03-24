@@ -185,60 +185,92 @@ export const useMealPlanning = () => {
       }
       console.log('Found meal at index:', mealIndex);
       
-      // Format the recipe data according to RecipeRef model
+      // Format the recipe to add
       const formattedRecipe = {
         id: recipe.id,
         name: recipe.name,
         prep_time: Number(recipe.prep_time),
         cook_time: Number(recipe.cook_time),
         servings: Number(recipe.servings),
-        image_url: '',
+        image_url: recipe.image_url || '',
+        // Important: preserve the original ingredients format
         ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : []
       };
-      console.log('Formatted recipe:', formattedRecipe);
       
       // Add the recipe to the meal
       targetDay.meals[mealIndex].recipes.push(formattedRecipe);
+      console.log('Updated day with added recipe:', targetDay);
       
-      // Clean and format the data structure
-      const cleanDays = updatedDays.map(day => ({
-        date: day.date,
-        meals: day.meals.map(meal => ({
-          name: meal.name,
-          time: meal.time || '',
-          recipes: meal.recipes.map(recipe => ({
-            id: recipe.id,
-            name: recipe.name,
-            prep_time: Number(recipe.prep_time),
-            cook_time: Number(recipe.cook_time),
-            servings: Number(recipe.servings),
-            image_url: recipe.image_url || '',
-            ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : []
-          })),
-          notes: meal.notes || ''
-        })),
-        notes: day.notes || ''
-      }));
-      
-      console.log('Updated days after adding recipe:', cleanDays);
-      
-      // Update the meal plan
+      // Create update data with the full days array
       const updateData = {
-        days: cleanDays
+        days: updatedDays
       };
-      console.log('Sending update to server:', JSON.stringify(updateData, null, 2));
       
-      const success = await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
-      if (success) {
-        // Refresh meal plans
+      // Update the local state immediately to show the change
+      setMealPlans(prevPlans => {
+        // Create a deep copy of the previous plans
+        const updatedPlans = JSON.parse(JSON.stringify(prevPlans));
+        // Find the index of the plan being updated
+        const planIndex = updatedPlans.findIndex(p => p.id === mealPlanId);
+        if (planIndex !== -1) {
+          // Replace the days with the updated days
+          updatedPlans[planIndex].days = updatedDays;
+        }
+        return updatedPlans;
+      });
+      
+      // Send update to backend
+      console.log('Sending update to server:', updateData);
+      try {
+        // Send the update without $set - let the backend handle MongoDB formatting
+        const updatedPlan = await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
+        console.log('Server response after update:', updatedPlan);
+        
+        // Verify the recipe was added by checking the returned plan
+        let recipeWasAdded = false;
+        if (updatedPlan && updatedPlan.days) {
+          for (const day of updatedPlan.days) {
+            for (const meal of day.meals) {
+              if (meal.recipes.some(r => r.id === recipe.id)) {
+                recipeWasAdded = true;
+                break;
+              }
+            }
+            if (recipeWasAdded) break;
+          }
+        }
+        
+        if (recipeWasAdded) {
+          toast.success(t('success.recipeAdded', 'Recipe added to meal plan successfully'));
+          // Update our state with the server response to ensure consistency
+          setMealPlans(prevPlans => {
+            const updatedPlans = [...prevPlans];
+            const planIndex = updatedPlans.findIndex(p => p.id === mealPlanId);
+            if (planIndex !== -1) {
+              updatedPlans[planIndex] = updatedPlan;
+            }
+            return updatedPlans;
+          });
+          return true;
+        } else {
+          console.warn('Recipe was not found in the updated plan from server');
+          // Force a refresh from server to sync state
+          await fetchMealPlans();
+          toast.error(t('errors.failedToAddRecipe', 'Recipe may not have been saved correctly'));
+          return false;
+        }
+      } catch (error) {
+        console.error('Error during API call to update meal plan:', error);
+        toast.error(t('errors.failedToAddRecipe', 'Failed to save recipe to meal plan'));
+        // Refresh from server to ensure state is correct
         await fetchMealPlans();
-        toast.success(t('success.recipeAdded', 'Recipe added to meal plan successfully'));
-        return true;
+        return false;
       }
-      return false;
     } catch (error) {
       console.error('Error adding recipe to meal plan:', error);
       toast.error(t('errors.failedToAddRecipe', 'Failed to add recipe to meal plan'));
+      // Refresh from server to ensure state is correct
+      await fetchMealPlans();
       return false;
     }
   }, [user, mealPlans, fetchMealPlans, t]);

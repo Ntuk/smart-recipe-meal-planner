@@ -1,6 +1,24 @@
 import os
+import logging
 from shared.fastapi_app import create_app
 from shared.logging_config import setup_logging
+from fastapi import FastAPI, HTTPException, Depends, Request, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from motor.motor_asyncio import AsyncIOMotorClient
+from .routers import meal_plans
+from shared import rabbitmq_utils
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,  # Changed from INFO to DEBUG to get more detailed logs
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+)
+logger = logging.getLogger(__name__)
+
+# Set MongoDB driver logging to DEBUG
+logging.getLogger("motor").setLevel(logging.DEBUG)
+logging.getLogger("pymongo").setLevel(logging.DEBUG)
 
 # Apply MongoDB fix for database object comparison
 try:
@@ -32,6 +50,14 @@ app = create_app(
     rabbitmq_routing_key="meal_planning"
 )
 
-# Import and include routers
-from .routers import meal_plans
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
+)
+
+# Include routers
 app.include_router(meal_plans.router, prefix="/api/v1/meal-plans", tags=["meal-plans"]) 

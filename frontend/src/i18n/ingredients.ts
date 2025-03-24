@@ -165,6 +165,11 @@ export const ingredientTranslations: Record<string, Record<string, string>> = {
 
 // Helper function to translate an ingredient name
 export const translateIngredient = (ingredientName: string, language: string): string => {
+  // Handle undefined or null ingredient names
+  if (!ingredientName) {
+    return '';
+  }
+  
   // Convert to lowercase for case-insensitive matching
   const lowerCaseIngredient = ingredientName.toLowerCase();
   

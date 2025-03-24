@@ -59,6 +59,19 @@ const MealPlanPage = () => {
     }
   }, [state?.selectedRecipe]);
 
+  // Update the current meal plan view when mealPlans changes
+  useEffect(() => {
+    // If we're viewing a meal plan and mealPlans array was updated
+    if (mealPlan && !showPlanForm && mealPlans.length > 0) {
+      // Find the current meal plan in the updated list
+      const updatedPlan = mealPlans.find(plan => plan.id === mealPlan.id);
+      if (updatedPlan) {
+        console.log('Updating displayed meal plan with latest data:', updatedPlan);
+        setMealPlan(updatedPlan);
+      }
+    }
+  }, [mealPlans, mealPlan, showPlanForm]);
+
   // Dietary preferences options
   const dietaryOptions = [
     { id: 'vegetarian', label: t('mealPlan.dietaryOptions.vegetarian', 'Vegetarian') },
@@ -531,18 +544,26 @@ const MealPlanPage = () => {
                                   <div className="mt-4">
                                     <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
                                     <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
-                                      {recipe.ingredients?.map((ingredient: any, idx: number) => (
-                                        <li key={idx} className={availableIngredients.some(i => 
-                                          i.toLowerCase().includes(ingredient.name.toLowerCase()) || 
-                                          ingredient.name.toLowerCase().includes(i.toLowerCase())
-                                        ) ? '' : 'text-red-500'}>
-                                          {translateIngredientName(ingredient.name)}
-                                          {!availableIngredients.some(i => 
-                                            i.toLowerCase().includes(ingredient.name.toLowerCase()) || 
-                                            ingredient.name.toLowerCase().includes(i.toLowerCase())
-                                          ) && ` (${t('mealPlan.missing', 'missing')})`}
-                                        </li>
-                                      ))}
+                                      {recipe.ingredients?.map((ingredient: any, idx: number) => {
+                                        // Handle both string and object formats for ingredients
+                                        const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
+                                        
+                                        // Skip rendering if ingredient name is undefined or null
+                                        if (!ingredientName) return null;
+                                        
+                                        return (
+                                          <li key={idx} className={availableIngredients.some(i => 
+                                            i.toLowerCase().includes(ingredientName.toLowerCase()) || 
+                                            ingredientName.toLowerCase().includes(i.toLowerCase())
+                                          ) ? '' : 'text-red-500'}>
+                                            {translateIngredientName(ingredientName)}
+                                            {!availableIngredients.some(i => 
+                                              i.toLowerCase().includes(ingredientName.toLowerCase()) || 
+                                              ingredientName.toLowerCase().includes(i.toLowerCase())
+                                            ) && ` (${t('mealPlan.missing', 'missing')})`}
+                                          </li>
+                                        );
+                                      })}
                                     </ul>
                                   </div>
                                   <div className="mt-5">
@@ -563,13 +584,18 @@ const MealPlanPage = () => {
                       <div className="bg-white p-6 rounded-lg shadow">
                         <h3 className="text-lg font-medium text-gray-900">Meal Schedule</h3>
                         <div className="mt-4">
-                          {mealPlan.days && mealPlan.days.map((day, dayIndex) => (
+                          {mealPlan.days && mealPlan.days.map((day, dayIndex) => {
+                            console.log(`Rendering day ${dayIndex}:`, day);
+                            return (
                             <div key={dayIndex} className="mb-6 border-b pb-4">
                               <h4 className="font-medium">Day {dayIndex + 1}: {new Date(day.date).toLocaleDateString()}</h4>
-                              {day.meals.map((meal, mealIndex) => (
+                              {day.meals.map((meal, mealIndex) => {
+                                console.log(`Rendering meal ${mealIndex} (${meal.name}):`, meal);
+                                console.log(`Recipes for ${meal.name}:`, meal.recipes);
+                                return (
                                 <div key={mealIndex} className="ml-4 mt-2">
                                   <h5 className="font-medium">{meal.name} {meal.time && `(${meal.time})`}</h5>
-                                  {meal.recipes && meal.recipes.length > 0 ? (
+                                  {Array.isArray(meal.recipes) && meal.recipes.length > 0 ? (
                                     <ul className="list-disc ml-6">
                                       {meal.recipes.map((recipe, recipeIndex) => (
                                         <li key={recipeIndex}>{recipe.name}</li>
@@ -579,9 +605,9 @@ const MealPlanPage = () => {
                                     <p className="text-sm text-gray-500 ml-6">No recipes scheduled</p>
                                   )}
                                 </div>
-                              ))}
+                              )})}
                             </div>
-                          ))}
+                          )})}
                         </div>
                         <div className="mt-4 flex justify-center">
                           <button

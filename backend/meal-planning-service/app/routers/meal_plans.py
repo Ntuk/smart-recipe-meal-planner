@@ -9,6 +9,11 @@ from bson import ObjectId
 import uuid
 import os
 import random
+import json
+import copy
+import traceback
+
+print("**************** MEAL PLANS ROUTER MODULE LOADED ****************")
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -382,7 +387,13 @@ async def update_meal_plan(
     meal_plan_update: dict,
     current_user: dict = Depends(get_current_user)
 ):
+    """
+    Update a meal plan
+    """
     try:
+        logger.info(f"Received update data: {json.dumps(meal_plan_update, default=str)}")
+        
+        # Get the collection
         if not hasattr(request.app.state, 'db'):
             logger.error("Database not initialized in app state")
             raise HTTPException(
@@ -393,80 +404,100 @@ async def update_meal_plan(
         db = request.app.state.db
         collection = db["meal_plans"]
         
-        # Check if meal plan exists and belongs to user
-        meal_plan = await collection.find_one({
-            "id": meal_plan_id,
-            "user_id": current_user["id"]
-        })
-        
-        if not meal_plan:
+        # Get the existing meal plan
+        existing_meal_plan = await collection.find_one({"id": meal_plan_id})
+        if not existing_meal_plan:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Meal plan {meal_plan_id} not found"
+                detail="Meal plan not found"
             )
         
-        # Process the update data
-        update_data = {}
-        logger.info(f"Received update data: {meal_plan_update}")
+        # Create a deep copy of the existing meal plan to avoid modifying the original
+        updated_meal_plan = copy.deepcopy(existing_meal_plan)
         
-        if "days" in meal_plan_update:
-            days_data = []
-            for day in meal_plan_update["days"]:
-                try:
-                    # Convert date string to date object
-                    if "date" in day:
-                        day["date"] = datetime.strptime(day["date"], "%Y-%m-%d").date()
-                    
-                    # Process meals
-                    if "meals" in day:
-                        processed_meals = []
-                        for meal in day["meals"]:
-                            # Process recipes
-                            if "recipes" in meal:
-                                processed_recipes = []
-                                for recipe in meal["recipes"]:
-                                    # Ensure numeric fields
-                                    recipe["prep_time"] = int(recipe.get("prep_time", 0))
-                                    recipe["cook_time"] = int(recipe.get("cook_time", 0))
-                                    recipe["servings"] = int(recipe.get("servings", 4))
-                                    
-                                    processed_recipes.append(recipe)
-                                meal["recipes"] = processed_recipes
-                            
-                            processed_meals.append(meal)
-                        day["meals"] = processed_meals
-                    
-                    days_data.append(day)
-                except Exception as e:
-                    logger.error(f"Error processing day data: {str(e)}")
-                    logger.error(f"Problematic day data: {day}")
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Error processing day data: {str(e)}"
-                    )
-            update_data["days"] = days_data
+        # Extract the update data, check if it's using $set format from frontend
+        if "$set" in meal_plan_update:
+            update_data = meal_plan_update["$set"]
+            logger.info(f"Extracted update data from $set: {json.dumps(update_data, default=str)}")
+        else:
+            update_data = meal_plan_update
         
-        update_data["updated_at"] = datetime.utcnow()
-        logger.info(f"Final update data: {update_data}")
+        # Apply updates to our copy
+        for key, value in update_data.items():
+            # Update the field in our updated_meal_plan copy
+            updated_meal_plan[key] = value
+            print(f"Updated field '{key}' in meal plan")
+            
+            if key == "days":
+                print(f"DAYS UPDATE FOUND: {len(value)} days")
+                # Debug log to verify the recipes have been added
+                for day_index, day in enumerate(value):
+                    print(f"DAY {day_index + 1}: {day.get('date')}")
+                    for meal_index, meal in enumerate(day.get("meals", [])):
+                        recipes = meal.get("recipes", [])
+                        print(f"  MEAL {meal_index + 1}: {meal.get('name')} - {len(recipes)} recipes")
+                        for recipe_index, recipe in enumerate(recipes):
+                            print(f"    RECIPE {recipe_index + 1}: {recipe.get('name', 'unnamed')}")
         
-        # Update the meal plan
-        await collection.update_one(
-            {"id": meal_plan_id},
-            {"$set": update_data}
+        # Remove the _id field before updating (MongoDB will handle this)
+        if "_id" in updated_meal_plan:
+            original_id = updated_meal_plan["_id"]
+            del updated_meal_plan["_id"]
+        else:
+            original_id = None
+            
+        # Always update the 'updated_at' field
+        updated_meal_plan["updated_at"] = datetime.utcnow()
+        logger.info(f"Final update data: {json.dumps({'updated_at': updated_meal_plan['updated_at']}, default=str)}")
+        
+        print(f"REPLACING DOCUMENT with updated version: {json.dumps(updated_meal_plan, default=str)}")
+        
+        # Replace the entire document with our updated version
+        result = await collection.replace_one(
+            {"id": meal_plan_id}, 
+            updated_meal_plan
         )
         
-        # Fetch and return the updated meal plan
-        updated_meal_plan = await collection.find_one({"id": meal_plan_id})
-        if not updated_meal_plan:
+        print(f"REPLACE RESULT: matched={result.matched_count}, modified={result.modified_count}")
+        
+        if result.matched_count == 0:
+            print(f"ERROR: No document matched the query for meal plan ID: {meal_plan_id}")
+            print(f"QUERY USED: {{\"id\": \"{meal_plan_id}\"}}")
+            print(f"ALL DOCUMENT KEYS: {list(updated_meal_plan.keys())}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Meal plan {meal_plan_id} not found after update"
+                detail=f"Meal plan {meal_plan_id} not found during update"
             )
-        return updated_meal_plan
-    except HTTPException as he:
-        raise he
+        
+        # Get the updated document to return
+        updated_doc = await collection.find_one({"id": meal_plan_id})
+        if not updated_doc:
+            print("ERROR: Failed to retrieve updated document")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve updated document"
+            )
+        
+        # Log the full document for debug purposes
+        print(f"UPDATED DOCUMENT: {json.dumps(updated_doc, default=str)}")
+        
+        # Verify recipes were actually saved
+        recipe_count = 0
+        for day in updated_doc.get("days", []):
+            for meal in day.get("meals", []):
+                recipe_count += len(meal.get("recipes", []))
+        
+        print(f"Total recipes in updated document: {recipe_count}")
+        
+        return updated_doc
+        
+    except HTTPException as e:
+        # Re-raise HTTP exceptions
+        raise e
     except Exception as e:
+        # Log and raise other exceptions
         logger.error(f"Error updating meal plan: {str(e)}")
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating meal plan: {str(e)}"
