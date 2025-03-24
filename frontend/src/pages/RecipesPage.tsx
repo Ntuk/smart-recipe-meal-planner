@@ -61,6 +61,7 @@ interface LocationState {
   forMealPlan?: string;
   mealTime?: string;
   currentMealPlan?: any;
+  selectedDay?: number;
 }
 
 const RecipesPage = () => {
@@ -117,6 +118,7 @@ const RecipesPage = () => {
     try {
       console.log('Adding recipe to existing meal plan:', state.forMealPlan);
       console.log('Meal time:', state.mealTime);
+      console.log('Selected day index:', state.selectedDay);
       
       // Add recipe to existing meal plan
       const success = await addRecipeToMealPlan(
@@ -129,7 +131,8 @@ const RecipesPage = () => {
           servings: recipe.servings,
           ingredients: recipe.ingredients
         },
-        state.mealTime // Pass the meal time string directly from state
+        state.mealTime, // Pass the meal time string
+        state.selectedDay // Pass the selected day index
       );
 
       if (success) {

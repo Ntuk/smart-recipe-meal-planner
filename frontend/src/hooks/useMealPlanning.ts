@@ -119,7 +119,7 @@ export const useMealPlanning = () => {
   };
 
   // Add function to add a recipe to a meal plan
-  const addRecipeToMealPlan = useCallback(async (mealPlanId: string, recipe: Recipe, mealTime: string) => {
+  const addRecipeToMealPlan = useCallback(async (mealPlanId: string, recipe: Recipe, mealTime: string, dayIndex?: number) => {
     if (!user) {
       console.log('No user found, cannot add recipe to meal plan');
       return false;
@@ -128,6 +128,7 @@ export const useMealPlanning = () => {
       mealPlanId,
       recipe,
       mealTime,
+      dayIndex,
       currentMealPlans: mealPlans
     });
     
@@ -161,10 +162,20 @@ export const useMealPlanning = () => {
       // Create a deep copy of the days array
       const updatedDays = JSON.parse(JSON.stringify(mealPlan.days));
       
-      // Find the first day that has the specified meal time
-      const targetDayIndex = updatedDays.findIndex(day => 
-        day.meals.some(meal => meal.name === mealTime)
-      );
+      // Determine which day to add the recipe to
+      let targetDayIndex: number;
+      
+      if (dayIndex !== undefined && dayIndex >= 0 && dayIndex < updatedDays.length) {
+        // If dayIndex is provided and valid, use that
+        targetDayIndex = dayIndex;
+        console.log(`Using specified day index: ${targetDayIndex}`);
+      } else {
+        // Otherwise fall back to the legacy behavior - first day with the meal time
+        targetDayIndex = updatedDays.findIndex(day => 
+          day.meals.some(meal => meal.name === mealTime)
+        );
+        console.log(`Found first day with meal time ${mealTime} at index: ${targetDayIndex}`);
+      }
       
       if (targetDayIndex === -1) {
         console.error('No day found with meal time:', mealTime);

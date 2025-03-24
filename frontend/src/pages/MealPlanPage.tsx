@@ -250,34 +250,68 @@ const MealPlanPage = () => {
 
   // Add meal time selection modal
   const [showMealTimeModal, setShowMealTimeModal] = useState(false);
+  const [selectedDay, setSelectedDay] = useState(1); // Default to Day 1
 
-  const renderMealTimeModal = () => (
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Select Meal Time</h3>
-        <div className="space-y-2">
-          {['Breakfast', 'Lunch', 'Dinner'].map((mealTime) => (
-            <button
-              key={mealTime}
-              onClick={() => {
-                handleAddRecipesToPlan(mealTime);
-                setShowMealTimeModal(false);
-              }}
-              className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
+  const renderMealTimeModal = () => {
+    // Calculate the number of days in the current meal plan
+    const numberOfDays = mealPlan?.days?.length || 0;
+    
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Select Day and Meal Time</h3>
+          
+          {/* Day selection */}
+          <div className="mb-4">
+            <label htmlFor="day-select" className="block text-sm font-medium text-gray-700 mb-1">
+              Day
+            </label>
+            <select
+              id="day-select"
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
             >
-              {mealTime}
-            </button>
-          ))}
+              {Array.from({ length: numberOfDays }, (_, i) => (
+                <option key={i+1} value={i+1}>Day {i+1}</option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Meal time selection */}
+          <div className="space-y-2">
+            <p className="block text-sm font-medium text-gray-700 mb-1">Meal Time</p>
+            {['Breakfast', 'Lunch', 'Dinner'].map((mealTime) => (
+              <button
+                key={mealTime}
+                onClick={() => {
+                  // Pass both the day number and meal time when navigating
+                  navigate('/recipes', {
+                    state: {
+                      forMealPlan: mealPlan?.id,
+                      mealTime,
+                      selectedDay: selectedDay - 1, // Convert to 0-based index
+                      currentMealPlan: mealPlan
+                    }
+                  });
+                  setShowMealTimeModal(false);
+                }}
+                className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
+              >
+                {mealTime}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowMealTimeModal(false)}
+            className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+          >
+            Cancel
+          </button>
         </div>
-        <button
-          onClick={() => setShowMealTimeModal(false)}
-          className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-        >
-          Cancel
-        </button>
       </div>
-    </div>
-  );
+    );
+  };
 
   // Render existing meal plans list
   const renderMealPlansList = () => {
@@ -524,61 +558,71 @@ const MealPlanPage = () => {
                   
                   <div className="mt-6">
                     {(mealPlan.days && mealPlan.days.some(day => day.meals.some(meal => meal.recipes && meal.recipes.length > 0))) ? (
-                      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                        {mealPlan.days.flatMap((day: MealPlanDay, dayIndex: number) => 
-                          day.meals.flatMap((meal: MealPlanMeal, mealIndex: number) => 
-                            meal.recipes.map((recipe: MealPlanRecipe) => (
-                              <div key={`${day.date}-${mealIndex}-${recipe.id}`} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                                <div className="p-5">
-                                  <div className="flex justify-between items-start">
-                                    <h3 className="text-lg font-medium text-gray-900">{recipe.name}</h3>
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                      {t('mealPlan.day', 'Day')} {dayIndex + 1} - {meal.name || `Meal ${mealIndex + 1}`}
-                                    </span>
-                                  </div>
-                                  <p className="mt-1 text-sm text-gray-500">
-                                    {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} | 
-                                    {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} | 
-                                    {t('mealPlan.servings', 'Servings')}: {recipe.servings}
-                                  </p>
-                                  <div className="mt-4">
-                                    <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
-                                    <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
-                                      {recipe.ingredients?.map((ingredient: any, idx: number) => {
-                                        // Handle both string and object formats for ingredients
-                                        const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
-                                        
-                                        // Skip rendering if ingredient name is undefined or null
-                                        if (!ingredientName) return null;
-                                        
-                                        return (
-                                          <li key={idx} className={availableIngredients.some(i => 
-                                            i.toLowerCase().includes(ingredientName.toLowerCase()) || 
-                                            ingredientName.toLowerCase().includes(i.toLowerCase())
-                                          ) ? '' : 'text-red-500'}>
-                                            {translateIngredientName(ingredientName)}
-                                            {!availableIngredients.some(i => 
+                      <div>
+                        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                          {mealPlan.days.flatMap((day: MealPlanDay, dayIndex: number) => 
+                            day.meals.flatMap((meal: MealPlanMeal, mealIndex: number) => 
+                              meal.recipes.map((recipe: MealPlanRecipe) => (
+                                <div key={`${day.date}-${mealIndex}-${recipe.id}`} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+                                  <div className="p-5">
+                                    <div className="flex justify-between items-start">
+                                      <h3 className="text-lg font-medium text-gray-900">{recipe.name}</h3>
+                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                        {t('mealPlan.day', 'Day')} {dayIndex + 1} - {meal.name || `Meal ${mealIndex + 1}`}
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                      {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} | 
+                                      {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} | 
+                                      {t('mealPlan.servings', 'Servings')}: {recipe.servings}
+                                    </p>
+                                    <div className="mt-4">
+                                      <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
+                                      <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
+                                        {recipe.ingredients?.map((ingredient: any, idx: number) => {
+                                          // Handle both string and object formats for ingredients
+                                          const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
+                                          
+                                          // Skip rendering if ingredient name is undefined or null
+                                          if (!ingredientName) return null;
+                                          
+                                          return (
+                                            <li key={idx} className={availableIngredients.some(i => 
                                               i.toLowerCase().includes(ingredientName.toLowerCase()) || 
                                               ingredientName.toLowerCase().includes(i.toLowerCase())
-                                            ) && ` (${t('mealPlan.missing', 'missing')})`}
-                                          </li>
-                                        );
-                                      })}
-                                    </ul>
-                                  </div>
-                                  <div className="mt-5">
-                                    <Link
-                                      to={`/recipes/${recipe.id}`}
-                                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    >
-                                      {t('recipes.viewRecipe')}
-                                    </Link>
+                                            ) ? '' : 'text-red-500'}>
+                                              {translateIngredientName(ingredientName)}
+                                              {!availableIngredients.some(i => 
+                                                i.toLowerCase().includes(ingredientName.toLowerCase()) || 
+                                                ingredientName.toLowerCase().includes(i.toLowerCase())
+                                              ) && ` (${t('mealPlan.missing', 'missing')})`}
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    </div>
+                                    <div className="mt-5">
+                                      <Link
+                                        to={`/recipes/${recipe.id}`}
+                                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                      >
+                                        {t('recipes.viewRecipe')}
+                                      </Link>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))
-                          )
-                        )}
+                              ))
+                            )
+                          )}
+                        </div>
+                        <div className="mt-8 flex justify-center">
+                          <button
+                            onClick={() => setShowMealTimeModal(true)}
+                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none"
+                          >
+                            Add More Recipes to this Plan
+                          </button>
+                        </div>
                       </div>
                     ) : (
                       <div className="bg-white p-6 rounded-lg shadow">
