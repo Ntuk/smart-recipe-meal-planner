@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { toast } from 'react-hot-toast';
 import { recipeApiService } from '../services/api';
+import { useTranslation } from 'react-i18next';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -152,6 +153,7 @@ interface Recipe {
   tags: string[];
   cuisine: string;
   difficulty: string;
+  image_url?: string;
   nutritional_info?: {
     calories: number;
     protein: number;
@@ -170,6 +172,25 @@ const RecipeDetailPage = () => {
   const [searchParams] = useSearchParams();
   const forMealPlanId = searchParams.get('for_meal_plan');
   const { addRecipeToMealPlan, mealPlans } = useMealPlanning();
+  const { t } = useTranslation();
+
+  // Add handleDelete function
+  const handleDelete = async () => {
+    if (!id || !recipe) return;
+    
+    try {
+      const confirmed = window.confirm(t('recipes.deleteConfirmation', 'Are you sure you want to delete this recipe?'));
+      
+      if (confirmed) {
+        await recipeApiService.deleteRecipe(id);
+        toast.success(t('recipes.deleted', 'Recipe deleted successfully'));
+        navigate('/recipes');
+      }
+    } catch (error) {
+      console.error('Error deleting recipe:', error);
+      toast.error(t('recipes.deleteError', 'Failed to delete recipe'));
+    }
+  };
 
   useEffect(() => {
     // Fetch recipe from API
@@ -186,46 +207,49 @@ const RecipeDetailPage = () => {
         }
         
         // If not a mock recipe, fetch from API
-        const response = await recipeApiService.getRecipe(id);
-        if (response) {
-          console.log('Recipe fetched from API:', response);
-          
-          // Convert from API format to our Recipe format
-          const formattedRecipe = {
-            id: response.id,
-            title: response.name,
-            description: response.description || '',
-            ingredients: Array.isArray(response.ingredients)
-              ? response.ingredients.map((ing: any) => {
-                  if (typeof ing === 'string') {
-                    return ing;
-                  } else {
-                    // Format ingredient with quantity and unit if available
-                    const quantity = ing.quantity ? ing.quantity : '';
-                    const unit = ing.unit ? ing.unit : '';
-                    if (quantity || unit) {
-                      return `${quantity} ${unit} ${ing.name}`.trim();
+        if (id) {  // Check if id exists before using it
+          const response = await recipeApiService.getRecipe(id);
+          if (response) {
+            console.log('Recipe fetched from API:', response);
+            
+            // Convert from API format to our Recipe format
+            const formattedRecipe = {
+              id: response.id,
+              title: response.name,
+              description: response.description || '',
+              ingredients: Array.isArray(response.ingredients)
+                ? response.ingredients.map((ing: any) => {
+                    if (typeof ing === 'string') {
+                      return ing;
+                    } else {
+                      // Format ingredient with quantity and unit if available
+                      const quantity = ing.quantity ? ing.quantity : '';
+                      const unit = ing.unit ? ing.unit : '';
+                      if (quantity || unit) {
+                        return `${quantity} ${unit} ${ing.name}`.trim();
+                      }
+                      return ing.name;
                     }
-                    return ing.name;
-                  }
-                })
-              : [],
-            instructions: Array.isArray(response.steps)
-              ? response.steps.map((step: any) => step.description || step)
-              : [],
-            prep_time_minutes: response.prep_time,
-            cook_time_minutes: response.cook_time,
-            servings: response.servings || 4,
-            tags: response.tags || [],
-            cuisine: response.cuisine || 'Other',
-            difficulty: response.difficulty || 'Medium',
-            nutritional_info: response.nutrition
-          };
-          
-          setRecipe(formattedRecipe);
-          setServings(formattedRecipe.servings);
-          setLoading(false);
-          return;
+                  })
+                : [],
+              instructions: Array.isArray(response.steps)
+                ? response.steps.map((step: any) => step.description || step)
+                : [],
+              prep_time_minutes: response.prep_time,
+              cook_time_minutes: response.cook_time,
+              servings: response.servings || 4,
+              tags: response.tags || [],
+              cuisine: response.cuisine || 'Other',
+              difficulty: response.difficulty || 'Medium',
+              image_url: response.image_url || '',
+              nutritional_info: response.nutrition
+            };
+            
+            setRecipe(formattedRecipe);
+            setServings(formattedRecipe.servings);
+            setLoading(false);
+            return;
+          }
         }
         
         // If not found in API, try localStorage as fallback
@@ -302,15 +326,19 @@ const RecipeDetailPage = () => {
         return;
       }
       
+      // Convert ingredients to the format expected by the meal planning service
+      const ingredientsForMealPlan = recipe.ingredients.map(ing => 
+        typeof ing === 'string' ? { name: ing } : ing
+      );
+      
       // For simplicity, let's add to the first day and first meal (breakfast)
-      // In a full implementation, you'd show a UI to select the day and meal
       const recipeToAdd = {
         id: recipe.id,
         name: recipe.title,
         prep_time: recipe.prep_time_minutes,
         cook_time: recipe.cook_time_minutes,
         servings: recipe.servings,
-        ingredients: recipe.ingredients
+        ingredients: ingredientsForMealPlan
       };
       
       console.log('Adding recipe to meal plan:', recipeToAdd);
@@ -330,6 +358,11 @@ const RecipeDetailPage = () => {
         toast.error('Failed to add recipe to meal plan');
       }
     } else {
+      // Convert ingredients to the format expected by the meal planning service
+      const ingredientsForMealPlan = recipe.ingredients.map(ing => 
+        typeof ing === 'string' ? { name: ing } : ing
+      );
+      
       // If no meal plan ID, navigate to the meal plan page for creation
       navigate('/meal-plan', { 
         state: { 
@@ -339,7 +372,7 @@ const RecipeDetailPage = () => {
             prep_time: recipe.prep_time_minutes,
             cook_time: recipe.cook_time_minutes,
             servings: recipe.servings,
-            ingredients: recipe.ingredients
+            ingredients: ingredientsForMealPlan
           }
         } 
       });
@@ -397,28 +430,61 @@ const RecipeDetailPage = () => {
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            {/* Recipe header */}
             <div className="px-4 py-5 sm:px-6">
-              <div className="flex justify-between items-start">
+              <div className="flex flex-wrap justify-between items-center">
                 <div>
-                  <h1 className="text-3xl font-bold text-gray-900">{recipe.title}</h1>
-                  <p className="mt-1 max-w-2xl text-lg text-gray-500">{recipe.description}</p>
+                  <h1 className="text-2xl font-bold text-gray-900">{recipe.title}</h1>
+                  <p className="mt-1 max-w-2xl text-sm text-gray-500">{recipe.description}</p>
                 </div>
-                <Link
-                  to="/recipes"
-                  className="inline-flex items-center px-3 py-1 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Back to Recipes
-                </Link>
+                <div className="flex space-x-2 mt-4 sm:mt-0">
+                  <Link
+                    to={`/recipes/${id}/edit`}
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                  >
+                    {t('common.edit')}
+                  </Link>
+                  <button
+                    onClick={handleDelete}
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    {t('common.delete')}
+                  </button>
+                  <button
+                    onClick={handleAddToMealPlan}
+                    className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    {t('common.addToMealPlan')}
+                  </button>
+                </div>
               </div>
             </div>
             
+            {/* Recipe Image */}
+            <div className="px-4 py-5 sm:p-6 border-t border-gray-200">
+              <div className="max-w-lg mx-auto">
+                <img 
+                  src={recipe.image_url || "https://img.freepik.com/free-photo/empty-clipboard-surrounded-by-fast-food_23-2148242554.jpg"}
+                  alt={recipe.title} 
+                  className="w-full h-auto rounded-lg shadow-md object-cover"
+                  style={{ maxHeight: "400px" }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.onerror = null;
+                    target.src = "https://img.freepik.com/free-photo/empty-clipboard-surrounded-by-fast-food_23-2148242554.jpg";
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Recipe details */}
             <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                 <div>
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-semibold text-gray-900">Ingredients</h2>
+                    <h2 className="text-xl font-semibold text-gray-900">{t('recipes.ingredients')}</h2>
                     <div className="flex items-center">
-                      <span className="text-sm text-gray-700 mr-2">Servings:</span>
+                      <span className="text-sm text-gray-700 mr-2">{t('recipes.servings')}:</span>
                       <div className="flex items-center">
                         <button
                           type="button"
@@ -442,11 +508,13 @@ const RecipeDetailPage = () => {
                       </div>
                     </div>
                   </div>
-                  
+
                   <ul className="space-y-2">
                     {recipe.ingredients.map((ingredient, index) => {
                       // Extract quantity if present (e.g., "2 cups flour" -> "2 cups")
-                      const match = ingredient.match(/^(\d+(\.\d+)?(\s+\d+\/\d+)?(\s+[a-zA-Z]+)?)\s+(.+)$/);
+                      const match = typeof ingredient === 'string' ? 
+                        ingredient.match(/^(\d+(\.\d+)?(\s+\d+\/\d+)?(\s+[a-zA-Z]+)?)\s+(.+)$/) : 
+                        null;
                       
                       if (match) {
                         const [, quantity, , , , item] = match;
@@ -459,9 +527,9 @@ const RecipeDetailPage = () => {
                           // Handle fractions like "1/2"
                           if (numericPart.includes('/')) {
                             const [numerator, denominator] = numericPart.split('/').map(Number);
-                            scaledQuantity = (numerator / denominator) * scalingFactor;
+                            scaledQuantity = (numerator / denominator) * (servings / recipe.servings);
                           } else {
-                            scaledQuantity = parseFloat(numericPart) * scalingFactor;
+                            scaledQuantity = parseFloat(numericPart) * (servings / recipe.servings);
                           }
                           
                           // Format to 1 decimal place if needed
@@ -480,47 +548,17 @@ const RecipeDetailPage = () => {
                         }
                       }
                       
-                      return <li key={index} className="text-gray-700">{ingredient}</li>;
+                      return <li key={index} className="text-gray-700">
+                        {typeof ingredient === 'string' 
+                          ? ingredient 
+                          : (ingredient as { name: string }).name}
+                      </li>;
                     })}
                   </ul>
-                  
-                  <div className="mt-6">
-                    <h3 className="text-lg font-medium text-gray-900">Nutrition (per serving)</h3>
-                    {recipe.nutritional_info ? (
-                      <div className="mt-2 grid grid-cols-4 gap-4 text-center">
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="block text-sm font-medium text-gray-500">Calories</span>
-                          <span className="block mt-1 text-lg font-semibold text-gray-900">
-                            {recipe.nutritional_info.calories}
-                          </span>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="block text-sm font-medium text-gray-500">Protein</span>
-                          <span className="block mt-1 text-lg font-semibold text-gray-900">
-                            {recipe.nutritional_info.protein}g
-                          </span>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="block text-sm font-medium text-gray-500">Carbs</span>
-                          <span className="block mt-1 text-lg font-semibold text-gray-900">
-                            {recipe.nutritional_info.carbs}g
-                          </span>
-                        </div>
-                        <div className="bg-gray-50 rounded-lg p-3">
-                          <span className="block text-sm font-medium text-gray-500">Fat</span>
-                          <span className="block mt-1 text-lg font-semibold text-gray-900">
-                            {recipe.nutritional_info.fat}g
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-gray-500 italic">Nutritional information not available</p>
-                    )}
-                  </div>
                 </div>
                 
                 <div>
-                  <h2 className="text-xl font-semibold text-gray-900 mb-4">Instructions</h2>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-4">{t('recipes.instructions')}</h2>
                   <ol className="space-y-4">
                     {recipe.instructions.map((instruction, index) => (
                       <li key={index} className="flex">
@@ -533,33 +571,33 @@ const RecipeDetailPage = () => {
                   </ol>
                   
                   <div className="mt-6">
-                    <h3 className="text-lg font-medium text-gray-900">Details</h3>
+                    <h3 className="text-lg font-medium text-gray-900">{t('recipes.details')}</h3>
                     <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
                       <div>
-                        <dt className="text-sm font-medium text-gray-500">Prep Time</dt>
-                        <dd className="text-sm text-gray-900">{recipe.prep_time_minutes} minutes</dd>
+                        <dt className="text-sm font-medium text-gray-500">{t('recipes.prepTime')}</dt>
+                        <dd className="text-sm text-gray-900">{recipe.prep_time_minutes} {t('recipes.minutes')}</dd>
                       </div>
                       <div>
-                        <dt className="text-sm font-medium text-gray-500">Cook Time</dt>
-                        <dd className="text-sm text-gray-900">{recipe.cook_time_minutes} minutes</dd>
+                        <dt className="text-sm font-medium text-gray-500">{t('recipes.cookTime')}</dt>
+                        <dd className="text-sm text-gray-900">{recipe.cook_time_minutes} {t('recipes.minutes')}</dd>
                       </div>
                       <div>
-                        <dt className="text-sm font-medium text-gray-500">Total Time</dt>
-                        <dd className="text-sm text-gray-900">{recipe.prep_time_minutes + recipe.cook_time_minutes} minutes</dd>
+                        <dt className="text-sm font-medium text-gray-500">{t('recipes.totalTime')}</dt>
+                        <dd className="text-sm text-gray-900">{recipe.prep_time_minutes + recipe.cook_time_minutes} {t('recipes.minutes')}</dd>
                       </div>
                       <div>
-                        <dt className="text-sm font-medium text-gray-500">Difficulty</dt>
+                        <dt className="text-sm font-medium text-gray-500">{t('recipes.difficulty')}</dt>
                         <dd className="text-sm text-gray-900">{recipe.difficulty}</dd>
                       </div>
                       <div>
-                        <dt className="text-sm font-medium text-gray-500">Cuisine</dt>
+                        <dt className="text-sm font-medium text-gray-500">{t('recipes.cuisine')}</dt>
                         <dd className="text-sm text-gray-900">{recipe.cuisine}</dd>
                       </div>
                     </dl>
                   </div>
                   
                   <div className="mt-6">
-                    <h3 className="text-lg font-medium text-gray-900">Tags</h3>
+                    <h3 className="text-lg font-medium text-gray-900">{t('recipes.tags')}</h3>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {recipe.tags.map((tag) => (
                         <span
@@ -572,28 +610,6 @@ const RecipeDetailPage = () => {
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="mt-8 flex justify-center space-x-4">
-                <button
-                  onClick={handleAddToMealPlan}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  {forMealPlanId ? 'Add to Current Meal Plan' : 'Add to Meal Plan'}
-                </button>
-                <Link
-                  to="/shopping-list"
-                  state={{ ingredients: recipe.ingredients }}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Add to Shopping List
-                </Link>
-                <Link
-                  to={`/recipes/edit/${id}`}
-                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-                >
-                  Edit Recipe
-                </Link>
               </div>
             </div>
           </div>

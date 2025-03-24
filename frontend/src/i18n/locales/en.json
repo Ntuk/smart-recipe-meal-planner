@@ -24,7 +24,8 @@
     "guest": "Guest",
     "allRightsReserved": "All rights reserved",
     "backToList": "Back to List",
-    "view": "View"
+    "view": "View",
+    "addToMealPlan": "Add to Meal Plan"
   },
   "navigation": {
     "home": "Home",
@@ -101,7 +102,18 @@
     "addToMealTime": "Add to {{mealTime}}",
     "addedToMealPlan": "Recipe added to meal plan",
     "addToMealPlanError": "Failed to add recipe to meal plan",
-    "selectForMealTime": "Select a recipe to add to {{mealTime}}"
+    "selectForMealTime": "Select a recipe to add to {{mealTime}}",
+    "nutrition": "Nutrition",
+    "noNutrition": "Nutritional information not available",
+    "details": "Details",
+    "totalTime": "Total Time",
+    "calories": "Calories",
+    "protein": "Protein",
+    "carbs": "Carbs",
+    "fat": "Fat",
+    "deleteConfirmation": "Are you sure you want to delete this recipe?",
+    "deleted": "Recipe deleted successfully",
+    "deleteError": "Failed to delete recipe"
   },
   "scan": {
     "title": "Ingredient Scanner",

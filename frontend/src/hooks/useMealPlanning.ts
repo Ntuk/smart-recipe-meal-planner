@@ -1,55 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { mealPlanningApiService } from '../services/api';
-import { MealPlan, MealPlanDay, Meal, Recipe } from '../types';
 import { useAuth } from './useAuth';
 import { toast } from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
 
-// Types
-interface MealPlan {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  days: MealPlanDay[];
-}
-
-interface MealPlanDay {
-  date: string;
-  meals: Meal[];
-  notes?: string;
-}
-
-interface Meal {
-  name: string;
-  time?: string;
-  recipes: Recipe[];
-  notes?: string;
-}
-
-interface Recipe {
-  id: string;
-  name: string;
-  prep_time: number;
-  cook_time: number;
-  servings: number;
-  image_url?: string;
-  ingredients?: Array<{
-    name: string;
-    quantity?: string;
-    unit?: string;
-  }>;
-}
-
-interface Day {
-  date: string;
-  meals: Meal[];
-  notes?: string;
-}
+// Use the types from the imported module instead of redeclaring them
+import { MealPlan, MealPlanDay, MealPlanMeal, Recipe } from '../types';
 
 export const useMealPlanning = () => {
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -58,12 +18,18 @@ export const useMealPlanning = () => {
     if (!user) {
       return;
     }
+
+    setLoading(true);
+    setError(null);
+
     try {
-      const response = await mealPlanningApiService.getMealPlans(user.id);
-      setMealPlans(response);
+      const plans = await mealPlanningApiService.getMealPlans(user.id);
+      setMealPlans(plans);
     } catch (error) {
       console.error('Error fetching meal plans:', error);
       toast.error(t('errors.failedToFetchMealPlans', 'Failed to fetch meal plans'));
+    } finally {
+      setLoading(false);
     }
   }, [user, t]);
 
@@ -72,10 +38,10 @@ export const useMealPlanning = () => {
       toast.error(t('errors.mustBeLoggedIn', 'You must be logged in to create a meal plan'));
       return null;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       const newMealPlan = await mealPlanningApiService.createMealPlan(mealPlanData);
       setMealPlans(prev => [...prev, newMealPlan]);
@@ -96,10 +62,10 @@ export const useMealPlanning = () => {
       toast.error(t('errors.mustBeLoggedIn', 'You must be logged in to delete a meal plan'));
       return false;
     }
-    
+
     setLoading(true);
     setError(null);
-    
+
     try {
       await mealPlanningApiService.deleteMealPlan(id);
       setMealPlans(prev => prev.filter(plan => plan.id !== id));
@@ -128,13 +94,14 @@ export const useMealPlanning = () => {
       // If not found, fetch it
       if (!mealPlan) {
         try {
-          mealPlan = await mealPlanningApiService.getMealPlan(mealPlanId);
-          if (!mealPlan) {
+          const fetchedPlan = await mealPlanningApiService.getMealPlan(mealPlanId);
+          if (!fetchedPlan) {
             toast.error(t('errors.mealPlanNotFound', 'Meal plan not found'));
             return false;
           }
+          mealPlan = fetchedPlan;
           // Update state with the fetched meal plan
-          setMealPlans(prev => [...prev, mealPlan]);
+          setMealPlans(prev => [...prev, fetchedPlan]);
         } catch (error) {
           console.error('Error fetching meal plan:', error);
           toast.error(t('errors.failedToFetchMealPlan', 'Failed to fetch meal plan'));
@@ -143,7 +110,7 @@ export const useMealPlanning = () => {
       }
       
       // Create a deep copy of the days array
-      const updatedDays = JSON.parse(JSON.stringify(mealPlan.days));
+      const updatedDays = JSON.parse(JSON.stringify(mealPlan!.days));
       
       // Determine which day to add the recipe to
       let targetDayIndex: number;
@@ -153,8 +120,8 @@ export const useMealPlanning = () => {
         targetDayIndex = dayIndex;
       } else {
         // Otherwise fall back to the legacy behavior - first day with the meal time
-        targetDayIndex = updatedDays.findIndex(day => 
-          day.meals.some(meal => meal.name === mealTime)
+        targetDayIndex = updatedDays.findIndex((day: MealPlanDay) => 
+          day.meals.some((meal: MealPlanMeal) => meal.name === mealTime)
         );
       }
       
@@ -167,88 +134,52 @@ export const useMealPlanning = () => {
       const targetDay = updatedDays[targetDayIndex];
       
       // Find the meal by name
-      const mealIndex = targetDay.meals.findIndex(meal => meal.name === mealTime);
+      const mealIndex = targetDay.meals.findIndex((meal: MealPlanMeal) => meal.name === mealTime);
       if (mealIndex === -1) {
         console.error('Meal not found:', mealTime);
         toast.error(t('errors.mealNotFound', 'Meal not found in meal plan'));
         return false;
       }
       
-      // Format the recipe to add
-      const formattedRecipe = {
+      // Create minimal recipe structure that matches the MealPlanRecipe structure
+      const minimalRecipe = {
         id: recipe.id,
-        name: recipe.name,
-        prep_time: Number(recipe.prep_time),
-        cook_time: Number(recipe.cook_time),
-        servings: Number(recipe.servings),
-        image_url: recipe.image_url || '',
-        // Important: preserve the original ingredients format
-        ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients : []
+        name: recipe.title || '',
+        prep_time: Number(recipe.prep_time_minutes) || 0,
+        cook_time: Number(recipe.cook_time_minutes) || 0,
+        servings: Number(recipe.servings) || 1,
       };
       
       // Add the recipe to the meal
-      targetDay.meals[mealIndex].recipes.push(formattedRecipe);
+      targetDay.meals[mealIndex].recipes.push(minimalRecipe);
       
       // Create update data with the full days array
       const updateData = {
         days: updatedDays
       };
       
-      // Update the local state immediately to show the change
-      setMealPlans(prevPlans => {
-        // Create a deep copy of the previous plans
-        const updatedPlans = JSON.parse(JSON.stringify(prevPlans));
-        // Find the index of the plan being updated
-        const planIndex = updatedPlans.findIndex(p => p.id === mealPlanId);
-        if (planIndex !== -1) {
-          // Replace the days with the updated days
-          updatedPlans[planIndex].days = updatedDays;
-        }
-        return updatedPlans;
-      });
+      // Send the update to the API
+      await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
       
-      // Send update to backend
-      try {
-        // Send the update without $set - let the backend handle MongoDB formatting
-        const updatedPlan = await mealPlanningApiService.updateMealPlan(mealPlanId, updateData);
-        
-        // Verify the recipe was added by checking the returned plan
-        let recipeWasAdded = false;
-        if (updatedPlan && updatedPlan.days) {
-          for (const day of updatedPlan.days) {
-            for (const meal of day.meals) {
-              if (meal.recipes.some(r => r.id === recipe.id)) {
-                recipeWasAdded = true;
-                break;
-              }
-            }
-            if (recipeWasAdded) break;
-          }
-        }
-        
-        if (recipeWasAdded) {
-          toast.success(t('success.recipeAddedToMealPlan', 'Recipe added to meal plan'));
-          return true;
-        } else {
-          // If we can't verify the recipe was added, show a warning
-          console.warn('Recipe may not have been added to the meal plan properly.');
-          return false;
-        }
-      } catch (error) {
-        console.error('Error updating meal plan with new recipe:', error);
-        toast.error(t('errors.failedToUpdateMealPlan', 'Failed to add recipe to meal plan'));
-        return false;
-      }
+      // Update the meal plans state
+      setMealPlans(prevPlans => 
+        prevPlans.map(plan => 
+          plan.id === mealPlanId ? { ...plan, days: updatedDays } : plan
+        )
+      );
+      
+      return true;
     } catch (error) {
       console.error('Error adding recipe to meal plan:', error);
-      toast.error(t('errors.failedToUpdateMealPlan', 'Failed to add recipe to meal plan'));
       return false;
     }
   }, [mealPlans, user, t]);
 
   useEffect(() => {
-    fetchMealPlans();
-  }, [fetchMealPlans]);
+    if (user) {
+      fetchMealPlans();
+    }
+  }, [user, fetchMealPlans]);
 
   return {
     mealPlans,

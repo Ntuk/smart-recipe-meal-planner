@@ -19,6 +19,7 @@ export interface Recipe {
   tags: string[];
   cuisine?: string;
   difficulty?: string;
+  image_url?: string;
   nutritional_info?: {
     calories: number;
     protein: number;

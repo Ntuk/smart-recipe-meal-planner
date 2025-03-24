@@ -34,6 +34,7 @@ const convertApiRecipeToAppFormat = (apiRecipe: any): Recipe => {
     tags: Array.isArray(apiRecipe.tags) ? apiRecipe.tags : [],
     cuisine: apiRecipe.cuisine || 'Other',
     difficulty: apiRecipe.difficulty || 'Medium',
+    image_url: apiRecipe.image_url || apiRecipe.strMealThumb || '',
   };
 };
 
@@ -267,6 +268,18 @@ const RecipesPage = () => {
           ) : filteredRecipes.length > 0 ? (
             filteredRecipes.map((recipe) => (
               <div key={recipe.id} className="bg-white overflow-hidden shadow rounded-lg">
+                <div className="h-48 w-full overflow-hidden">
+                  <img
+                    src={recipe.image_url || "https://img.freepik.com/free-photo/empty-clipboard-surrounded-by-fast-food_23-2148242554.jpg"}
+                    alt={recipe.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = null;
+                      target.src = "https://img.freepik.com/free-photo/empty-clipboard-surrounded-by-fast-food_23-2148242554.jpg";
+                    }}
+                  />
+                </div>
                 <div className="p-6">
                   <h3 className="text-lg font-medium text-gray-900">{recipe.title}</h3>
                   <p className="mt-1 text-sm text-gray-500">{recipe.description}</p>

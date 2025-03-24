@@ -227,14 +227,45 @@ const MealPlanPage = () => {
   const handleGeneratePlan = async () => {
     setIsLoading(true);
     try {
-      // Create a basic plan structure
+      // Create simplified day structure
+      const today = new Date();
+      
+      // Format dates as YYYY-MM-DD
+      const startDate = today.toISOString().split('T')[0];
+      
+      // Calculate end date
+      const endDate = new Date(today);
+      endDate.setDate(today.getDate() + days - 1);
+      const endDateStr = endDate.toISOString().split('T')[0];
+      
+      // Create simple days array
+      const daysArray = [];
+      for (let i = 0; i < days; i++) {
+        const date = new Date(today);
+        date.setDate(date.getDate() + i);
+        const dateStr = date.toISOString().split('T')[0];
+        
+        daysArray.push({
+          date: dateStr,
+          meals: [
+            { name: "Breakfast", time: "08:00", recipes: [] },
+            { name: "Lunch", time: "13:00", recipes: [] },
+            { name: "Dinner", time: "19:00", recipes: [] }
+          ]
+        });
+      }
+      
+      // Create minimal plan structure
       const planData = {
         name: planName,
-        days: days,
+        start_date: startDate,
+        end_date: endDateStr,
+        days: daysArray,
         dietary_preferences: dietaryPreferences,
         available_ingredients: availableIngredients,
       };
       
+      console.log("Sending meal plan data:", planData);
       const newPlanId = await createMealPlan(planData);
       
       if (newPlanId) {

@@ -294,19 +294,7 @@ export const mealPlanningApiService = {
       meals: Array<{
         name: string;
         time?: string;
-        recipes: Array<{
-          id: string;
-          name: string;
-          prep_time: number;
-          cook_time: number;
-          servings: number;
-          image_url?: string;
-          ingredients?: Array<{
-            name: string;
-            quantity?: string;
-            unit?: string;
-          }>;
-        }>;
+        recipes: any[];
         notes?: string;
       }>;
       notes?: string;
@@ -316,8 +304,26 @@ export const mealPlanningApiService = {
     available_ingredients?: string[];
   }) => {
     try {
-      console.log('Auth token:', localStorage.getItem('auth_token'));
-      const response = await mealPlanningApi.post('/api/v1/meal-plans', mealPlan);
+      // Create a minimal plan structure - only what's absolutely necessary
+      const minimalPlan = {
+        name: mealPlan.name,
+        start_date: mealPlan.start_date,
+        end_date: mealPlan.end_date,
+        days: mealPlan.days.map(day => ({
+          date: day.date,
+          meals: day.meals.map(meal => ({
+            name: meal.name,
+            time: meal.time || "",
+            recipes: [] // Empty array to avoid serialization issues
+          }))
+        })),
+        dietary_preferences: mealPlan.dietary_preferences || [],
+        available_ingredients: mealPlan.available_ingredients || []
+      };
+      
+      console.log('Sending minimal meal plan:', minimalPlan);
+      
+      const response = await mealPlanningApi.post('/api/v1/meal-plans', minimalPlan);
       console.log('Response status:', response.status);
       console.log('Response data:', response.data);
       return response.data;
