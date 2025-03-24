@@ -5,6 +5,7 @@ import { useMealPlanning } from '../hooks/useMealPlanning';
 import { Recipe, IngredientItem, RecipeIngredient } from '../types';
 import { toast } from 'react-hot-toast';
 import { recipeApiService } from '../services/api';
+import FormInput from '../components/FormInput';
 
 interface LocationState {
   forMealPlan?: string;
@@ -188,6 +189,13 @@ const RecipesPage = () => {
     );
   };
 
+  // Search icon SVG
+  const SearchIcon = () => (
+    <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+      <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+    </svg>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
@@ -219,21 +227,18 @@ const RecipesPage = () => {
         <div className="mt-6 bg-white shadow rounded-lg p-6">
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             <div className="sm:col-span-2">
-              <label htmlFor="search" className="block text-sm font-medium text-gray-700">
-                {t('common.search')}
-              </label>
-              <input
-                type="text"
+              <FormInput
+                label={t('common.search')}
                 id="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder={t('recipes.searchPlaceholder')}
+                icon={<SearchIcon />}
               />
             </div>
 
             <div className="sm:col-span-2">
-              <span className="block text-sm font-medium text-gray-700">{t('recipes.tags')}</span>
+              <span className="block text-sm font-medium text-gray-700 mb-1">{t('recipes.tags')}</span>
               <div className="mt-1 flex flex-wrap gap-2">
                 {allTags.map((tag) => (
                   <button
@@ -241,8 +246,8 @@ const RecipesPage = () => {
                     onClick={() => handleTagToggle(tag)}
                     className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
                       selectedTags.includes(tag)
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                        ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                        : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200'
                     }`}
                   >
                     {tag}

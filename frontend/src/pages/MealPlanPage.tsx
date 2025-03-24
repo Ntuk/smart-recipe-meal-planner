@@ -5,8 +5,7 @@ import { MealPlan, MealPlanDay, MealPlanMeal, MealPlanRecipe } from '../types';
 import { useTranslation } from 'react-i18next';
 import { useIngredientTranslation } from '../hooks/useIngredientTranslation';
 import { toast } from 'react-hot-toast';
-
-// Remove mock recipe data
+import FormInput from '../components/FormInput';
 
 interface LocationState {
   ingredients?: string[];
@@ -38,6 +37,7 @@ const MealPlanPage = () => {
   const [missingIngredients, setMissingIngredients] = useState<string[]>([]);
   const [showPlanForm, setShowPlanForm] = useState(false);
   const [selectedMealTime, setSelectedMealTime] = useState<string>("Breakfast");
+  const [newIngredient, setNewIngredient] = useState('');
 
   // Load existing meal plans when component mounts
   useEffect(() => {
@@ -150,7 +150,6 @@ const MealPlanPage = () => {
     { id: 'paleo', label: t('mealPlan.dietaryOptions.paleo', 'Paleo') },
   ];
 
-  // Handle dietary preference toggle
   const handleDietaryToggle = (preference: string) => {
     setDietaryPreferences(prev => 
       prev.includes(preference) 
@@ -159,130 +158,109 @@ const MealPlanPage = () => {
     );
   };
 
-  // Handle showing meal plan form
   const handleNewPlan = () => {
-    setShowPlanForm(true);
     setMealPlan(null);
+    setShowPlanForm(true);
+    setPlanName(t('mealPlan.defaultName', 'My Meal Plan'));
+    setDays(7);
+    setDietaryPreferences([]);
+    setAvailableIngredients([]);
   };
 
-  // Handle viewing a saved meal plan
   const handleViewMealPlan = (plan: MealPlan) => {
-    const missingIngredientsSet = new Set<string>();
+    setMealPlan(plan);
+    setShowPlanForm(false);
     
-    // Collect all ingredients from recipes
-    plan.days.forEach((day, i) => {
-      day.meals.forEach((meal, j) => {
-        meal.recipes.forEach(recipe => {
-          if (recipe.ingredients) {
-            recipe.ingredients.forEach(ingredient => {
-              // Handle both string and object ingredients
-              const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient.name;
-              
-              // Check if this ingredient is in our available ingredients
-              if (ingredientName && !availableIngredients.includes(ingredientName)) {
-                missingIngredientsSet.add(ingredientName);
+    // Extract ingredients from the meal plan for display
+    if (plan.available_ingredients) {
+      setAvailableIngredients(plan.available_ingredients);
+    } else {
+      // If no available_ingredients, extract from recipes
+      const allIngredients = new Set<string>();
+      
+      if (plan.days) {
+        plan.days.forEach(day => {
+          day.meals.forEach(meal => {
+            meal.recipes.forEach(recipe => {
+              if (recipe.ingredients) {
+                recipe.ingredients.forEach(ingredient => {
+                  // Handle both string and object ingredients
+                  const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
+                  if (ingredientName) {
+                    allIngredients.add(ingredientName);
+                  }
+                });
               }
             });
-          }
+          });
         });
-      });
-    });
-    
-    setMealPlan(plan);
-    setMissingIngredients(Array.from(missingIngredientsSet));
-    setShowPlanForm(false);
-  };
-
-  // Handle deleting a meal plan
-  const handleDeleteMealPlan = async (id: string) => {
-    if (window.confirm(t('mealPlan.confirmDelete', 'Are you sure you want to delete this meal plan?'))) {
-      await deleteMealPlan(id);
-      fetchMealPlans();
+      }
+      
+      setAvailableIngredients(Array.from(allIngredients));
     }
   };
-  
-  // Handle ingredient removal
+
+  const handleDeleteMealPlan = async (id: string) => {
+    try {
+      await deleteMealPlan(id);
+      toast.success(t('mealPlan.deletedSuccessfully', 'Meal plan deleted successfully'));
+      setMealPlan(null);
+      setShowPlanForm(false);
+    } catch (error) {
+      toast.error(t('mealPlan.deleteError', 'Failed to delete meal plan'));
+    }
+  };
+
   const handleRemoveIngredient = (ingredient: string) => {
     setAvailableIngredients(prev => prev.filter(i => i !== ingredient));
   };
 
-  // Handle ingredient addition
   const handleAddIngredient = (e: React.FormEvent) => {
     e.preventDefault();
-    const input = (document.getElementById('new-ingredient') as HTMLInputElement);
-    const newIngredient = input.value.trim();
-    
-    if (newIngredient && !availableIngredients.includes(newIngredient)) {
-      setAvailableIngredients(prev => [...prev, newIngredient]);
-      input.value = '';
+    const input = (e.target as HTMLFormElement).querySelector('#new-ingredient') as HTMLInputElement;
+    if (input && input.value.trim()) {
+      setAvailableIngredients(prev => [...prev, input.value.trim()]);
+      setNewIngredient('');
     }
   };
 
-  // Generate meal plan
   const handleGeneratePlan = async () => {
     setIsLoading(true);
-    
     try {
-      // Create start and end dates
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setDate(startDate.getDate() + days - 1);
-      
-      // Create meal plan data with proper structure
-      const mealPlanData = {
+      // Create a basic plan structure
+      const planData = {
         name: planName,
-        start_date: startDate.toISOString().split('T')[0],
-        end_date: endDate.toISOString().split('T')[0],
-        days: Array.from({ length: days }, (_, i) => {
-          const date = new Date(startDate);
-          date.setDate(startDate.getDate() + i);
-          return {
-            date: date.toISOString().split('T')[0],
-            meals: [
-              {
-                name: "Breakfast",
-                time: "08:00",
-                recipes: []
-              },
-              {
-                name: "Lunch",
-                time: "12:00",
-                recipes: []
-              },
-              {
-                name: "Dinner",
-                time: "18:00",
-                recipes: []
-              }
-            ]
-          };
-        }),
+        days: days,
         dietary_preferences: dietaryPreferences,
         available_ingredients: availableIngredients,
-        notes: `Meal plan for ${days} days with ${dietaryPreferences.length ? dietaryPreferences.join(', ') + ' preferences' : 'no specific preferences'}`
       };
       
-      const newPlan = await createMealPlan(mealPlanData);
+      const newPlanId = await createMealPlan(planData);
       
-      if (newPlan) {
-        setMealPlan(newPlan);
+      if (newPlanId) {
+        toast.success(t('mealPlan.createdSuccessfully', 'Meal plan created successfully'));
         
-        // If there was a recipe selected to add to this plan, add it
-        if (state?.selectedRecipe) {
-          await addRecipeToMealPlan(
-            newPlan.id, 
-            state.selectedRecipe, 
-            selectedMealTime || 'Breakfast',
-            0 // Add to first day
-          );
-          
-          // Navigate to remove state
-          navigate(`/meal-plans/${newPlan.id}`, { replace: true });
+        // If there's a selected recipe in the state, add it to the plan
+        if (state?.selectedRecipe && selectedMealTime) {
+          try {
+            await addRecipeToMealPlan(newPlanId, state.selectedRecipe, selectedMealTime);
+            toast.success(t('mealPlan.recipeAdded', 'Recipe added to meal plan'));
+          } catch (error) {
+            toast.error(t('mealPlan.recipeAddError', 'Failed to add recipe to meal plan'));
+          }
+        }
+        
+        // Find the newly created plan in the list of plans
+        await fetchMealPlans();
+        const createdPlan = mealPlans.find(plan => plan.id === newPlanId);
+        if (createdPlan) {
+          setMealPlan(createdPlan);
+          setShowPlanForm(false);
         }
       }
     } catch (error) {
-      console.error('Error creating meal plan:', error);
-      toast.error(t('mealPlan.generateError', 'Failed to generate meal plan'));
+      console.error('Error generating meal plan:', error);
+      toast.error(t('mealPlan.createError', 'Failed to create meal plan'));
     } finally {
       setIsLoading(false);
     }
@@ -324,7 +302,7 @@ const MealPlanPage = () => {
               id="day-select"
               value={selectedDay}
               onChange={(e) => setSelectedDay(parseInt(e.target.value))}
-              className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
             >
               {Array.from({ length: numberOfDays }, (_, i) => (
                 <option key={i+1} value={i+1}>Day {i+1}</option>
@@ -350,7 +328,7 @@ const MealPlanPage = () => {
                   });
                   setShowMealTimeModal(false);
                 }}
-                className="w-full text-left px-4 py-2 hover:bg-gray-100 rounded-md"
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 rounded-md text-sm"
               >
                 {mealTime}
               </button>
@@ -358,7 +336,7 @@ const MealPlanPage = () => {
           </div>
           <button
             onClick={() => setShowMealTimeModal(false)}
-            className="mt-4 w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            className="mt-4 w-full px-3 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 text-sm"
           >
             Cancel
           </button>
@@ -373,26 +351,14 @@ const MealPlanPage = () => {
       return (
         <div className="bg-white shadow sm:rounded-lg p-6 text-center">
           <p className="text-gray-500">{t('mealPlan.noPlans', 'You have no meal plans yet.')}</p>
-          <button
-            onClick={handleNewPlan}
-            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            {t('mealPlan.createNew', 'Create New Plan')}
-          </button>
         </div>
       );
     }
     
     return (
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
+        <div className="px-4 py-5 sm:px-6">
           <h2 className="text-lg font-medium text-gray-900">{t('mealPlan.savedPlans', 'Your Meal Plans')}</h2>
-          <button
-            onClick={handleNewPlan}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            {t('mealPlan.createNew', 'Create New Plan')}
-          </button>
         </div>
         <div className="border-t border-gray-200">
           <ul className="divide-y divide-gray-200">
@@ -401,9 +367,10 @@ const MealPlanPage = () => {
                 <div>
                   <h3 className="text-md font-medium text-blue-600">{plan.name}</h3>
                   <p className="text-sm text-gray-500">
-                    {new Date(plan.start_date).toLocaleDateString()} to {new Date(plan.end_date).toLocaleDateString()}
+                    {plan.start_date && plan.end_date && 
+                      `${new Date(plan.start_date).toLocaleDateString()} to ${new Date(plan.end_date).toLocaleDateString()}`}
                   </p>
-                  {plan.notes !== undefined && <p className="text-sm text-gray-500 mt-1">{plan.notes}</p>}
+                  {(plan as any).notes && <p className="text-sm text-gray-500 mt-1">{(plan as any).notes}</p>}
                 </div>
                 <div className="flex space-x-2">
                   <button
@@ -431,37 +398,33 @@ const MealPlanPage = () => {
   const renderPlanForm = () => (
     <div className="bg-white shadow sm:rounded-lg p-6">
       <div className="space-y-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">{t('mealPlan.planName', 'Plan Name')}</label>
-          <input
-            type="text"
-            value={planName}
-            onChange={(e) => setPlanName(e.target.value)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
-        </div>
+        <FormInput
+          label={t('mealPlan.planName', 'Plan Name')}
+          type="text"
+          value={planName}
+          onChange={(e) => setPlanName(e.target.value)}
+        />
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700">{t('mealPlan.numberOfDays', 'Number of Days')}</label>
-          <input
-            type="number"
-            id="days"
-            min="1"
-            max="30"
-            value={days}
-            onChange={(e) => setDays(parseInt(e.target.value))}
-            className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-          />
-        </div>
+        <FormInput
+          label={t('mealPlan.numberOfDays', 'Number of Days')}
+          type="number"
+          id="days"
+          min="1"
+          max="30"
+          value={days.toString()}
+          onChange={(e) => setDays(parseInt(e.target.value))}
+        />
 
         {state?.selectedRecipe && (
           <div>
-            <label className="block text-sm font-medium text-gray-700">{t('mealPlan.mealTime', 'When to add')} {state.selectedRecipe.name}?</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('mealPlan.mealTime', 'When to add')} {state.selectedRecipe.name}?
+            </label>
             <select
               id="meal-time"
               value={selectedMealTime}
               onChange={(e) => setSelectedMealTime(e.target.value)}
-              className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
             >
               <option value="Breakfast">Breakfast</option>
               <option value="Lunch">Lunch</option>
@@ -471,16 +434,16 @@ const MealPlanPage = () => {
         )}
 
         <div>
-          <span className="block text-sm font-medium text-gray-700">{t('mealPlan.dietaryPreferences', 'Dietary Preferences')}</span>
+          <span className="block text-sm font-medium text-gray-700 mb-1">{t('mealPlan.dietaryPreferences', 'Dietary Preferences')}</span>
           <div className="mt-2 flex flex-wrap gap-2">
             {dietaryOptions.map((option) => (
               <button
                 key={option.id}
                 type="button"
-                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium border ${
                   dietaryPreferences.includes(option.id)
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                    ? 'bg-blue-100 text-blue-800 border-blue-300'
+                    : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border-gray-200'
                 }`}
                 onClick={() => handleDietaryToggle(option.id)}
               >
@@ -494,16 +457,19 @@ const MealPlanPage = () => {
           <h3 className="text-lg font-medium text-gray-900">{t('mealPlan.availableIngredients', 'Available Ingredients')}</h3>
           
           <form onSubmit={handleAddIngredient} className="mt-4">
-            <div className="flex rounded-md shadow-sm">
-              <input
-                type="text"
-                id="new-ingredient"
-                className="focus:ring-blue-500 focus:border-blue-500 flex-1 block w-full rounded-none rounded-l-md sm:text-sm border-gray-300"
-                placeholder={t('mealPlan.enterIngredient', 'Enter an ingredient')}
-              />
+            <div className="flex">
+              <div className="flex-grow">
+                <FormInput
+                  id="new-ingredient"
+                  value={newIngredient}
+                  onChange={(e) => setNewIngredient(e.target.value)}
+                  placeholder={t('mealPlan.enterIngredient', 'Enter an ingredient')}
+                  className="rounded-r-none"
+                />
+              </div>
               <button
                 type="submit"
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-r-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="inline-flex items-center px-3 py-2 border border-l-0 border-blue-600 rounded-r-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 {t('common.add')}
               </button>
@@ -512,11 +478,11 @@ const MealPlanPage = () => {
           
           {availableIngredients.length > 0 ? (
             <div className="mt-4">
-              <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md">
+              <ul className="divide-y divide-gray-200 border border-gray-300 rounded-md">
                 {availableIngredients.map((ingredient, index) => (
                   <li key={index} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
                     <div className="w-0 flex-1 flex items-center">
-                      <span className="ml-2 flex-1 w-0 truncate">
+                      <span className="flex-1 w-0 truncate">
                         {translateIngredientName(ingredient)}
                       </span>
                     </div>
@@ -547,7 +513,7 @@ const MealPlanPage = () => {
               setMealPlan(null);
               setShowPlanForm(false);
             }}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             {t('common.cancel', 'Cancel')}
           </button>
@@ -555,7 +521,7 @@ const MealPlanPage = () => {
             type="button"
             onClick={handleGeneratePlan}
             disabled={isLoading}
-            className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isLoading ? t('common.loading') : t('mealPlan.generatePlan', 'Generate Plan')}
           </button>
@@ -564,187 +530,128 @@ const MealPlanPage = () => {
     </div>
   );
 
+  // Main render function
   return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
+    <div className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <div className="px-4 py-6 sm:px-0">
+        <div className="mb-6 flex justify-between items-center">
+          <h1 className="text-2xl font-semibold text-gray-900">{t('mealPlan.title', 'Meal Planner')}</h1>
+          
+          {!showPlanForm && !mealPlan && (
+            <button
+              onClick={handleNewPlan}
+              className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              {t('mealPlan.createNew', 'Create New Plan')}
+            </button>
+          )}
+          
+          {mealPlan && !showPlanForm && (
+            <div className="flex space-x-2">
+              <button
+                onClick={() => setShowMealTimeModal(true)}
+                className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                {t('mealPlan.addRecipe', 'Add Recipe')}
+              </button>
+              <button
+                onClick={() => setMealPlan(null)}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                {t('common.back', 'Back')}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Show meal plan form if creating a new plan */}
+        {showPlanForm && renderPlanForm()}
+
+        {/* Show the selected meal plan if there is one */}
+        {mealPlan && !showPlanForm && (
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h1 className="text-2xl font-bold text-gray-900">{t('mealPlan.title')}</h1>
-              <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                {t('mealPlan.description', 'Create a personalized meal plan based on your ingredients and preferences')}
-              </p>
+            <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">{mealPlan.name}</h2>
+              {mealPlan.start_date && mealPlan.end_date && (
+                <p className="mt-1 text-sm text-gray-500">
+                  {new Date(mealPlan.start_date).toLocaleDateString()} - {new Date(mealPlan.end_date).toLocaleDateString()}
+                </p>
+              )}
+              {(mealPlan as any).notes && <p className="mt-1 text-sm text-gray-500">{(mealPlan as any).notes}</p>}
             </div>
             
-            {showPlanForm ? (
-              renderPlanForm()
-            ) : (
-              mealPlan ? (
-                <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-bold text-gray-900">{mealPlan.name}</h2>
-                    <button
-                      onClick={() => {
-                        setMealPlan(null);
-                        setShowPlanForm(false);
-                      }}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      {t('common.backToList', 'Back to List')}
-                    </button>
+            {/* Display meal plan days */}
+            <div>
+              {mealPlan.days?.map((day, dayIndex) => (
+                <div key={dayIndex} className="border-b border-gray-200 last:border-b-0">
+                  <div className="px-4 py-3 bg-gray-50">
+                    <h3 className="text-md font-medium text-gray-900">
+                      {t('mealPlan.day', 'Day')} {dayIndex + 1}: {day.date && new Date(day.date).toLocaleDateString()}
+                    </h3>
+                    {day.notes && <p className="text-sm text-gray-500">{day.notes}</p>}
                   </div>
                   
-                  <div className="mt-2 text-sm text-gray-500">
-                    <p>
-                      {new Date(mealPlan.start_date).toLocaleDateString()} to {new Date(mealPlan.end_date).toLocaleDateString()}
-                    </p>
-                    {mealPlan && 'notes' in mealPlan && mealPlan.notes && (
-                      <p className="mt-1">{mealPlan.notes}</p>
-                    )}
-                  </div>
-                  
-                  <div className="mt-6">
-                    {(mealPlan.days && mealPlan.days.some(day => day.meals.some(meal => meal.recipes && meal.recipes.length > 0))) ? (
-                      <div>
-                        <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                          {mealPlan.days.flatMap((day: MealPlanDay, dayIndex: number) => 
-                            day.meals.flatMap((meal: MealPlanMeal, mealIndex: number) => 
-                              meal.recipes.map((recipe: MealPlanRecipe) => (
-                                <div key={`${day.date}-${mealIndex}-${recipe.id}`} className="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
-                                  <div className="p-5">
-                                    <div className="flex justify-between items-start">
-                                      <h3 className="text-lg font-medium text-gray-900">{recipe.name}</h3>
-                                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                        {t('mealPlan.day', 'Day')} {dayIndex + 1} - {meal.name || `Meal ${mealIndex + 1}`}
-                                      </span>
-                                    </div>
-                                    <p className="mt-1 text-sm text-gray-500">
-                                      {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} {` | `} 
-                                      {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} {` | `} 
-                                      {t('mealPlan.servings', 'Servings')}: {recipe.servings}
-                                    </p>
-                                    <div className="mt-4">
-                                      <h4 className="text-sm font-medium text-gray-900">{t('recipes.ingredients')}:</h4>
-                                      <ul className="mt-2 text-sm text-gray-500 list-disc list-inside">
-                                        {recipe.ingredients?.map((ingredient: any, idx: number) => {
-                                          // Handle both string and object formats for ingredients
-                                          const ingredientName = typeof ingredient === 'string' ? ingredient : ingredient?.name;
-                                          
-                                          // Skip rendering if ingredient name is undefined or null
-                                          if (!ingredientName) return null;
-                                          
-                                          return (
-                                            <li key={idx} className={availableIngredients.some(i => 
-                                              i.toLowerCase().includes(ingredientName.toLowerCase()) || 
-                                              ingredientName.toLowerCase().includes(i.toLowerCase())
-                                            ) ? '' : 'text-red-500'}>
-                                              {translateIngredientName(ingredientName)}
-                                              {!availableIngredients.some(i => 
-                                                i.toLowerCase().includes(ingredientName.toLowerCase()) || 
-                                                ingredientName.toLowerCase().includes(i.toLowerCase())
-                                              ) && ` (${t('mealPlan.missing', 'missing')})`}
-                                            </li>
-                                          );
-                                        })}
-                                      </ul>
-                                    </div>
-                                    <div className="mt-5">
-                                      <Link
-                                        to={`/recipes/${recipe.id}`}
-                                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                      >
-                                        {t('recipes.viewRecipe')}
-                                      </Link>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))
-                            )
-                          )}
-                        </div>
-                        <div className="mt-8 flex justify-center">
-                          <button
-                            onClick={() => setShowMealTimeModal(true)}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none"
-                          >
-                            Add More Recipes to this Plan
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="bg-white p-6 rounded-lg shadow">
-                        <h3 className="text-lg font-medium text-gray-900">Meal Schedule</h3>
-                        <div className="mt-4">
-                          {mealPlan.days && mealPlan.days.map((day, dayIndex) => {
-                            return (
-                            <div key={dayIndex} className="mb-6 border-b pb-4">
-                              <h4 className="font-medium">Day {dayIndex + 1}: {new Date(day.date).toLocaleDateString()}</h4>
-                              {day.meals.map((meal, mealIndex) => {
-                                return (
-                                <div key={mealIndex} className="ml-4 mt-2">
-                                  <h5 className="font-medium">{meal.name} {meal.time && `(${meal.time})`}</h5>
-                                  {Array.isArray(meal.recipes) && meal.recipes.length > 0 ? (
-                                    <ul className="list-disc ml-6">
-                                      {meal.recipes.map((recipe, recipeIndex) => (
-                                        <li key={recipeIndex}>{recipe.name}</li>
-                                      ))}
-                                    </ul>
-                                  ) : (
-                                    <p className="text-sm text-gray-500 ml-6">No recipes scheduled</p>
-                                  )}
-                                </div>
-                              )})}
-                            </div>
-                          )})}
-                        </div>
-                        <div className="mt-4 flex justify-center">
-                          <button
-                            onClick={() => setShowMealTimeModal(true)}
-                            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none"
-                          >
-                            Add Recipes to this Plan
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {missingIngredients.length > 0 && (
-                    <div className="mt-8">
-                      <h3 className="text-lg font-medium text-gray-900">{t('shoppingList.title')}</h3>
-                      <p className="mt-1 text-sm text-gray-500">
-                        {t('mealPlan.missingIngredientsDescription', 'These ingredients are needed for your meal plan but aren\'t in your available ingredients.')}
-                      </p>
-                      <div className="mt-4 bg-red-50 p-4 rounded-md">
-                        <ul className="list-disc pl-5 space-y-1">
-                          {missingIngredients.map((ingredient, index) => (
-                            <li key={index} className="text-sm text-red-700">
-                              {ingredient && translateIngredientName(ingredient.charAt(0).toUpperCase() + ingredient.slice(1))}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div className="mt-4">
-                        <Link
-                          to="/shopping-list"
-                          state={{ ingredients: missingIngredients }}
-                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  {/* Display meals for each day */}
+                  {day.meals.map((meal, mealIndex) => (
+                    <div key={mealIndex} className="px-4 py-3 border-t border-gray-200">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-sm font-medium text-gray-900">
+                          {meal.name} {meal.time && `(${meal.time})`}
+                        </h4>
+                        <button
+                          onClick={() => {
+                            navigate('/recipes', {
+                              state: {
+                                forMealPlan: mealPlan.id,
+                                mealTime: meal.name,
+                                selectedDay: dayIndex,
+                                currentMealPlan: mealPlan
+                              }
+                            });
+                          }}
+                          className="text-xs text-blue-600 hover:text-blue-800"
                         >
-                          {t('mealPlan.generateShoppingList')}
-                        </Link>
+                          {t('mealPlan.addRecipe', 'Add Recipe')}
+                        </button>
+                      </div>
+                      
+                      {/* Display recipes for each meal */}
+                      <div className="mt-2">
+                        {meal.recipes.length > 0 ? (
+                          <ul className="divide-y divide-gray-200 border border-gray-200 rounded-md">
+                            {meal.recipes.map((recipe, recipeIndex) => (
+                              <li key={recipeIndex} className="px-3 py-2 flex justify-between items-center">
+                                <div>
+                                  <Link to={`/recipes/${recipe.id}`} className="text-sm font-medium text-blue-600 hover:text-blue-800">
+                                    {recipe.name}
+                                  </Link>
+                                  <p className="text-xs text-gray-500">
+                                    {t('recipe.prepTime', 'Prep')}: {recipe.prep_time} min | {t('recipe.cookTime', 'Cook')}: {recipe.cook_time} min
+                                  </p>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-sm text-gray-500 italic">
+                            {t('mealPlan.noRecipes', 'No recipes added for this meal')}
+                          </p>
+                        )}
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              ) : (
-                // Show list of meal plans
-                renderMealPlansList()
-              )
-            )}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+        
+        {/* Show the list of meal plans if none is selected */}
+        {!mealPlan && !showPlanForm && renderMealPlansList()}
+        
+        {/* Meal time selection modal */}
+        {showMealTimeModal && renderMealTimeModal()}
       </div>
-      {showMealTimeModal && renderMealTimeModal()}
     </div>
   );
 };

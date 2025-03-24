@@ -67,8 +67,9 @@
     "or": "Or"
   },
   "recipes": {
-    "title": "Recipe Title",
+    "title": "Recipes",
     "createRecipe": "Create Recipe",
+    "createNew": "Create Recipe",
     "ingredients": "Ingredients",
     "instructions": "Instructions",
     "prepTime": "Prep Time",
