@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { toast } from 'react-hot-toast';
+import { recipeApiService } from '../services/api';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -171,27 +172,31 @@ const RecipeDetailPage = () => {
   const { addRecipeToMealPlan, mealPlans } = useMealPlanning();
 
   useEffect(() => {
-    // Simulate API call to fetch recipe
-    setLoading(true);
-    
-    // First, check localStorage for the recipe
-    try {
-      // Check in user_created_recipes
-      const userRecipesJson = localStorage.getItem('user_created_recipes');
-      if (userRecipesJson) {
-        const userRecipes = JSON.parse(userRecipesJson);
-        const userRecipe = userRecipes.find((r: any) => r.id === id);
+    // Fetch recipe from API
+    const fetchRecipe = async () => {
+      setLoading(true);
+      try {
+        // Check if it's a mock recipe first
+        const foundMockRecipe = MOCK_RECIPES.find(r => r.id === id);
+        if (foundMockRecipe) {
+          setRecipe(foundMockRecipe);
+          setServings(foundMockRecipe.servings);
+          setLoading(false);
+          return;
+        }
         
-        if (userRecipe) {
-          console.log('Found recipe in localStorage:', userRecipe);
+        // If not a mock recipe, fetch from API
+        const response = await recipeApiService.getRecipe(id);
+        if (response) {
+          console.log('Recipe fetched from API:', response);
           
-          // Convert from API format to our Recipe format if needed
+          // Convert from API format to our Recipe format
           const formattedRecipe = {
-            id: userRecipe.id,
-            title: userRecipe.name || userRecipe.title,
-            description: userRecipe.description || '',
-            ingredients: Array.isArray(userRecipe.ingredients)
-              ? userRecipe.ingredients.map((ing: any) => {
+            id: response.id,
+            title: response.name,
+            description: response.description || '',
+            ingredients: Array.isArray(response.ingredients)
+              ? response.ingredients.map((ing: any) => {
                   if (typeof ing === 'string') {
                     return ing;
                   } else {
@@ -205,40 +210,82 @@ const RecipeDetailPage = () => {
                   }
                 })
               : [],
-            instructions: Array.isArray(userRecipe.steps)
-              ? userRecipe.steps
-              : (userRecipe.instructions || []),
-            prep_time_minutes: userRecipe.prep_time || userRecipe.prep_time_minutes || 0,
-            cook_time_minutes: userRecipe.cook_time || userRecipe.cook_time_minutes || 0,
-            servings: userRecipe.servings || 4,
-            tags: userRecipe.tags || [],
-            cuisine: userRecipe.cuisine || 'Other',
-            difficulty: userRecipe.difficulty || 'Medium',
+            instructions: Array.isArray(response.steps)
+              ? response.steps.map((step: any) => step.description || step)
+              : [],
+            prep_time_minutes: response.prep_time,
+            cook_time_minutes: response.cook_time,
+            servings: response.servings || 4,
+            tags: response.tags || [],
+            cuisine: response.cuisine || 'Other',
+            difficulty: response.difficulty || 'Medium',
+            nutritional_info: response.nutrition
           };
           
           setRecipe(formattedRecipe);
           setServings(formattedRecipe.servings);
           setLoading(false);
-          return; // Exit early if recipe was found
+          return;
         }
-      }
-      
-      // If not found in localStorage, check mock recipes
-      const foundRecipe = MOCK_RECIPES.find(r => r.id === id);
-      
-      if (foundRecipe) {
-        setRecipe(foundRecipe);
-        setServings(foundRecipe.servings);
-      } else {
+        
+        // If not found in API, try localStorage as fallback
+        const userRecipesJson = localStorage.getItem('user_created_recipes');
+        if (userRecipesJson) {
+          const userRecipes = JSON.parse(userRecipesJson);
+          const userRecipe = userRecipes.find((r: any) => r.id === id);
+          
+          if (userRecipe) {
+            console.log('Found recipe in localStorage (fallback):', userRecipe);
+            
+            // Convert from API format to our Recipe format if needed
+            const formattedRecipe = {
+              id: userRecipe.id,
+              title: userRecipe.name || userRecipe.title,
+              description: userRecipe.description || '',
+              ingredients: Array.isArray(userRecipe.ingredients)
+                ? userRecipe.ingredients.map((ing: any) => {
+                    if (typeof ing === 'string') {
+                      return ing;
+                    } else {
+                      // Format ingredient with quantity and unit if available
+                      const quantity = ing.quantity ? ing.quantity : '';
+                      const unit = ing.unit ? ing.unit : '';
+                      if (quantity || unit) {
+                        return `${quantity} ${unit} ${ing.name}`.trim();
+                      }
+                      return ing.name;
+                    }
+                  })
+                : [],
+              instructions: Array.isArray(userRecipe.steps)
+                ? userRecipe.steps
+                : (userRecipe.instructions || []),
+              prep_time_minutes: userRecipe.prep_time || userRecipe.prep_time_minutes || 0,
+              cook_time_minutes: userRecipe.cook_time || userRecipe.cook_time_minutes || 0,
+              servings: userRecipe.servings || 4,
+              tags: userRecipe.tags || [],
+              cuisine: userRecipe.cuisine || 'Other',
+              difficulty: userRecipe.difficulty || 'Medium',
+            };
+            
+            setRecipe(formattedRecipe);
+            setServings(formattedRecipe.servings);
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // If we get here, the recipe wasn't found anywhere
         setError('Recipe not found');
+        setLoading(false);
+      } catch (error) {
+        console.error('Error loading recipe:', error);
+        setError('Failed to load recipe');
+        setLoading(false);
       }
-      
-      setLoading(false);
-    } catch (error) {
-      console.error('Error loading recipe:', error);
-      setError('Failed to load recipe');
-      setLoading(false);
-    }
+    };
+    
+    fetchRecipe();
   }, [id]);
 
   const handleAddToMealPlan = async () => {

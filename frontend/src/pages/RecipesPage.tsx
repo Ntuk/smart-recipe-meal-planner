@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { Recipe } from '../types';
 import { toast } from 'react-hot-toast';
+import { recipeApiService } from '../services/api';
 
 // Mock recipe data
 const MOCK_RECIPES = [
@@ -100,47 +101,75 @@ const RecipesPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
-  // Check localStorage for user-created recipes when component mounts
+  // Check for recipes from various sources when component mounts
   useEffect(() => {
-    try {
-      const storedRecipesJson = localStorage.getItem('user_created_recipes');
-      if (storedRecipesJson) {
-        const storedRecipes = JSON.parse(storedRecipesJson);
-        if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
-          console.log('Found user-created recipes in localStorage:', storedRecipes);
+    const fetchRecipes = async () => {
+      try {
+        setIsLoading(true);
+        
+        // First fetch recipes from the API
+        try {
+          const apiRecipes = await recipeApiService.getRecipes();
+          console.log('Recipes from API:', apiRecipes);
           
-          // Convert API format to our app's Recipe format and add to recipes state
-          const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
-          setRecipes(prev => {
-            // Filter out any recipes that might be duplicates by ID
-            const existingIds = prev.map(r => r.id);
-            const newRecipes = formattedRecipes.filter(r => !existingIds.includes(r.id));
-            return [...prev, ...newRecipes];
-          });
-        }
-      }
-      
-      // Also check for the most recently created recipe
-      const lastCreatedRecipeJson = localStorage.getItem('last_created_recipe');
-      if (lastCreatedRecipeJson) {
-        const lastCreatedRecipe = JSON.parse(lastCreatedRecipeJson);
-        console.log('Found last created recipe in localStorage:', lastCreatedRecipe);
-        
-        // Convert to app format and add if it's not already in the list
-        const formattedRecipe = convertApiRecipeToAppFormat(lastCreatedRecipe);
-        setRecipes(prev => {
-          if (!prev.some(r => r.id === formattedRecipe.id)) {
-            return [...prev, formattedRecipe];
+          if (Array.isArray(apiRecipes) && apiRecipes.length > 0) {
+            // Convert API format to our app's Recipe format
+            const formattedApiRecipes = apiRecipes.map(convertApiRecipeToAppFormat);
+            setRecipes(prev => {
+              // Filter out any recipes that might be duplicates by ID
+              const existingIds = prev.map(r => r.id);
+              const newRecipes = formattedApiRecipes.filter(r => !existingIds.includes(r.id));
+              return [...prev, ...newRecipes];
+            });
           }
-          return prev;
-        });
+        } catch (apiError) {
+          console.error('Error fetching recipes from API:', apiError);
+        }
         
-        // Clear the last created recipe from localStorage to avoid duplication
-        localStorage.removeItem('last_created_recipe');
+        // Then check localStorage for user-created recipes as a fallback
+        const storedRecipesJson = localStorage.getItem('user_created_recipes');
+        if (storedRecipesJson) {
+          const storedRecipes = JSON.parse(storedRecipesJson);
+          if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
+            console.log('Found user-created recipes in localStorage:', storedRecipes);
+            
+            // Convert API format to our app's Recipe format and add to recipes state
+            const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
+            setRecipes(prev => {
+              // Filter out any recipes that might be duplicates by ID
+              const existingIds = prev.map(r => r.id);
+              const newRecipes = formattedRecipes.filter(r => !existingIds.includes(r.id));
+              return [...prev, ...newRecipes];
+            });
+          }
+        }
+        
+        // Also check for the most recently created recipe
+        const lastCreatedRecipeJson = localStorage.getItem('last_created_recipe');
+        if (lastCreatedRecipeJson) {
+          const lastCreatedRecipe = JSON.parse(lastCreatedRecipeJson);
+          console.log('Found last created recipe in localStorage:', lastCreatedRecipe);
+          
+          // Convert to app format and add if it's not already in the list
+          const formattedRecipe = convertApiRecipeToAppFormat(lastCreatedRecipe);
+          setRecipes(prev => {
+            if (!prev.some(r => r.id === formattedRecipe.id)) {
+              return [...prev, formattedRecipe];
+            }
+            return prev;
+          });
+          
+          // Clear the last created recipe from localStorage to avoid duplication
+          localStorage.removeItem('last_created_recipe');
+        }
+      } catch (error) {
+        console.error('Error loading recipes:', error);
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      console.error('Error loading recipes from localStorage:', error);
-    }
+    };
+    
+    fetchRecipes();
   }, []);
 
   // Get unique cuisines, difficulties, and tags from recipes
