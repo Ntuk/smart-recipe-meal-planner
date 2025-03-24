@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthContext } from '../context/AuthContext';
+import cookzenLogo from '../assets/cookzen_logo.png';
 
 const HomePage = () => {
   const [count, setCount] = useState(0);
@@ -9,18 +10,31 @@ const HomePage = () => {
   const { isAuthenticated } = useAuthContext();
 
   return (
-    <div className="bg-gray-100">
+    <div className="bg-gray-100 min-h-screen">
       <div className="max-w-7xl mx-auto py-12 px-4 sm:px-6 lg:px-8">
         <div className="text-center">
-          <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl sm:tracking-tight lg:text-6xl">
-            {t('home.title')}
-          </h1>
+          {/* Hero section with logo */}
+          <div className="flex flex-col items-center justify-center mb-8">
+            <img 
+              src={cookzenLogo} 
+              alt="CookZen" 
+              className="h-24 w-auto mb-6" 
+            />
+          </div>
+          
           <p className="mt-5 max-w-xl mx-auto text-xl text-gray-500">
             {t('home.welcome')}
           </p>
-          <p className="mt-3 max-w-md mx-auto text-lg text-gray-500">
-            {t('home.description')}
-          </p>
+          
+          <div className="mt-6 max-w-2xl mx-auto">
+            <p className="text-lg text-gray-600 mb-2">
+              {t('home.tagline')}
+            </p>
+            <p className="text-md text-gray-500">
+              {t('home.extendedDescription')}
+            </p>
+          </div>
+          
           <div className="mt-10 flex justify-center gap-4">
             {isAuthenticated ? (
               <>

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 import FormInput from '../components/FormInput';
+import cookzenLogo from '../assets/cookzen_logo.png';
 
 const RegisterPage = () => {
   const [username, setUsername] = useState('');
@@ -53,13 +54,20 @@ const RegisterPage = () => {
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <div className="flex justify-center">
+          <img 
+            src={cookzenLogo} 
+            alt="CookZen" 
+            className="h-16 w-auto mb-4" 
+          />
+        </div>
+        <h2 className="mt-2 text-center text-3xl font-extrabold text-gray-900">
           {t('auth.registerTitle')}
         </h2>
         <p className="mt-2 text-center text-sm text-gray-600">
-          {t('auth.or')}{' '}
+          {t('auth.alreadyHaveAccount')}{' '}
           <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500">
-            {t('auth.alreadyHaveAccount')}
+            {t('common.login')}
           </Link>
         </p>
       </div>

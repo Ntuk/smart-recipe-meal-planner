@@ -36,8 +36,10 @@
   },
   "home": {
     "title": "Smart Recipe & Meal Planner",
-    "welcome": "Welcome to Smart Recipe & Meal Planner",
+    "welcome": "Smart Recipe & Meal Planner",
     "description": "Plan your meals based on available ingredients, dietary preferences, and more!",
+    "tagline": "Never waste ingredients or wonder \"what's for dinner?\" again!",
+    "extendedDescription": "CookZen uses advanced AI and image recognition to transform your available ingredients into delicious, personalized meal plans. Simply scan what you have, tell us your dietary preferences, and let our smart system handle the rest.",
     "scanIngredients": "Scan Ingredients",
     "browseRecipes": "Browse Recipes",
     "buttonClickCount": "Button click count",

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthContext } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
+import cookzenLogo from '../assets/cookzen_logo.png';
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,8 +20,12 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link to="/" className="text-xl font-bold text-blue-600">
-              {t('common.appName')}
+            <Link to="/" className="flex items-center">
+              <img 
+                src={cookzenLogo} 
+                alt={t('common.appName')} 
+                className="h-10 w-auto"
+              />
             </Link>
           </div>
 
@@ -183,9 +188,11 @@ const Navbar = () => {
               isActive('/') 
                 ? 'bg-blue-50 border-l-4 border-blue-500 text-blue-700' 
                 : 'border-l-4 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            } block pl-3 pr-4 py-2 text-base font-medium`}
+            } block pl-3 pr-4 py-2 text-base font-medium flex items-center`}
             onClick={() => setIsMenuOpen(false)}
           >
+            {/* Small logo in mobile menu */}
+            <img src={cookzenLogo} alt="" className="h-6 w-auto mr-2" />
             {t('navigation.home')}
           </Link>
           
