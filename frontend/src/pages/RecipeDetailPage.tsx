@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { useMealPlanning } from '../hooks/useMealPlanning';
 import { toast } from 'react-hot-toast';
 import { recipeApiService } from '../services/api';
@@ -315,38 +315,46 @@ const RecipeDetailPage = () => {
   const handleAddToMealPlan = async () => {
     if (!recipe) return;
     
-    // If we have a meal plan ID from URL parameters, add directly to that meal plan
-    if (forMealPlanId) {
-      console.log(`Adding recipe ${recipe.id} to meal plan ${forMealPlanId}`);
-      const mealPlan = mealPlans.find(plan => plan.id === forMealPlanId);
-      
-      if (!mealPlan) {
-        console.error(`Meal plan with ID ${forMealPlanId} not found in:`, mealPlans);
-        toast.error('Meal plan not found');
-        return;
-      }
-      
+    const location = useLocation();
+    const state = location.state as {
+      forMealPlanId?: string;
+      mealTime?: string;
+      selectedDay?: number;
+      currentMealPlan?: any;
+    } || {};
+    
+    const { forMealPlanId: mealPlanId, mealTime, selectedDay } = state;
+    
+    if (mealPlanId) {
       // Convert ingredients to the format expected by the meal planning service
       const ingredientsForMealPlan = recipe.ingredients.map(ing => 
         typeof ing === 'string' ? { name: ing } : ing
       );
       
-      // For simplicity, let's add to the first day and first meal (breakfast)
-      const recipeToAdd = {
+      // Create a proper recipe object that matches the Recipe type
+      const recipeObject: Recipe = {
         id: recipe.id,
-        name: recipe.title,
-        prep_time: recipe.prep_time_minutes,
-        cook_time: recipe.cook_time_minutes,
+        title: recipe.title,
+        description: recipe.description || '',
+        ingredients: recipe.ingredients,
+        instructions: recipe.instructions,
+        prep_time_minutes: recipe.prep_time_minutes,
+        cook_time_minutes: recipe.cook_time_minutes,
         servings: recipe.servings,
-        ingredients: ingredientsForMealPlan
+        tags: recipe.tags || [],
+        cuisine: recipe.cuisine || '',
+        difficulty: recipe.difficulty || '',
+        image_url: recipe.image_url,
+        nutritional_info: recipe.nutritional_info
       };
       
-      console.log('Adding recipe to meal plan:', recipeToAdd);
+      console.log('Adding recipe to meal plan:', recipeObject);
       
       const success = await addRecipeToMealPlan(
-        forMealPlanId, 
-        recipeToAdd, 
-        "Breakfast" // Use the meal time string directly
+        mealPlanId, 
+        recipeObject,
+        mealTime || "Breakfast",
+        selectedDay
       );
       
       console.log('Recipe addition result:', success);
@@ -439,7 +447,7 @@ const RecipeDetailPage = () => {
                 </div>
                 <div className="flex space-x-2 mt-4 sm:mt-0">
                   <Link
-                    to={`/recipes/${id}/edit`}
+                    to={`/recipes/edit/${id}`}
                     className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
                     {t('common.edit')}
