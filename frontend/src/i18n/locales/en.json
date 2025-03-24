@@ -66,7 +66,7 @@
     "or": "Or"
   },
   "recipes": {
-    "title": "Recipes",
+    "title": "Recipe Title",
     "createRecipe": "Create Recipe",
     "ingredients": "Ingredients",
     "instructions": "Instructions",
@@ -80,7 +80,7 @@
     "quantity": "Quantity",
     "unit": "Unit",
     "noRecipesFound": "No recipes found",
-    "description": "Find recipes based on ingredients, cuisine, or dietary preferences",
+    "description": "Description",
     "viewRecipe": "View Recipe",
     "adjustSearchFilters": "Try adjusting your search or filters to find what you're looking for.",
     "createRecipeDescription": "Fill in the details to create a new recipe",

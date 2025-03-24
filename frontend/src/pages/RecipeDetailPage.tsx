@@ -9,7 +9,14 @@ const MOCK_RECIPES = [
     id: '1',
     title: 'Spaghetti Carbonara',
     description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
-    ingredients: ['Spaghetti', 'Eggs', 'Pancetta', 'Parmesan cheese', 'Black pepper', 'Salt'],
+    ingredients: [
+      '200g Spaghetti', 
+      '3 Eggs', 
+      '100g Pancetta', 
+      '50g Parmesan cheese', 
+      '1 tsp Black pepper', 
+      '1/2 tsp Salt'
+    ],
     instructions: [
       'Cook spaghetti according to package instructions.',
       'In a bowl, whisk eggs and grated cheese.',
@@ -34,7 +41,15 @@ const MOCK_RECIPES = [
     id: '2',
     title: 'Chicken Stir Fry',
     description: 'A quick and healthy stir fry with chicken and vegetables.',
-    ingredients: ['Chicken breast', 'Bell peppers', 'Broccoli', 'Carrots', 'Soy sauce', 'Garlic', 'Ginger'],
+    ingredients: [
+      '400g Chicken breast', 
+      '2 Bell peppers', 
+      '1 cup Broccoli', 
+      '2 medium Carrots', 
+      '3 tbsp Soy sauce', 
+      '2 cloves Garlic', 
+      '1 tbsp Ginger'
+    ],
     instructions: [
       'Slice chicken and vegetables.',
       'Heat oil in a wok or large pan.',
@@ -59,7 +74,16 @@ const MOCK_RECIPES = [
     id: '3',
     title: 'Vegetable Curry',
     description: 'A flavorful vegetarian curry with mixed vegetables and spices.',
-    ingredients: ['Potatoes', 'Carrots', 'Peas', 'Cauliflower', 'Curry powder', 'Coconut milk', 'Onion', 'Garlic'],
+    ingredients: [
+      '3 medium Potatoes', 
+      '2 large Carrots', 
+      '1 cup Peas', 
+      '1 head Cauliflower', 
+      '2 tbsp Curry powder', 
+      '400ml Coconut milk', 
+      '1 large Onion', 
+      '3 cloves Garlic'
+    ],
     instructions: [
       'Sauté onions and garlic until soft.',
       'Add curry powder and cook until fragrant.',
@@ -84,7 +108,15 @@ const MOCK_RECIPES = [
     id: '4',
     title: 'Greek Salad',
     description: 'A refreshing salad with tomatoes, cucumbers, olives, and feta cheese.',
-    ingredients: ['Tomatoes', 'Cucumber', 'Red onion', 'Feta cheese', 'Kalamata olives', 'Olive oil', 'Lemon juice'],
+    ingredients: [
+      '4 large Tomatoes', 
+      '1 large Cucumber', 
+      '1/2 Red onion', 
+      '200g Feta cheese', 
+      '1/2 cup Kalamata olives', 
+      '3 tbsp Olive oil', 
+      '2 tbsp Lemon juice'
+    ],
     instructions: [
       'Chop tomatoes, cucumber, and red onion.',
       'Combine vegetables in a bowl.',
@@ -142,7 +174,56 @@ const RecipeDetailPage = () => {
     // Simulate API call to fetch recipe
     setLoading(true);
     
-    setTimeout(() => {
+    // First, check localStorage for the recipe
+    try {
+      // Check in user_created_recipes
+      const userRecipesJson = localStorage.getItem('user_created_recipes');
+      if (userRecipesJson) {
+        const userRecipes = JSON.parse(userRecipesJson);
+        const userRecipe = userRecipes.find((r: any) => r.id === id);
+        
+        if (userRecipe) {
+          console.log('Found recipe in localStorage:', userRecipe);
+          
+          // Convert from API format to our Recipe format if needed
+          const formattedRecipe = {
+            id: userRecipe.id,
+            title: userRecipe.name || userRecipe.title,
+            description: userRecipe.description || '',
+            ingredients: Array.isArray(userRecipe.ingredients)
+              ? userRecipe.ingredients.map((ing: any) => {
+                  if (typeof ing === 'string') {
+                    return ing;
+                  } else {
+                    // Format ingredient with quantity and unit if available
+                    const quantity = ing.quantity ? ing.quantity : '';
+                    const unit = ing.unit ? ing.unit : '';
+                    if (quantity || unit) {
+                      return `${quantity} ${unit} ${ing.name}`.trim();
+                    }
+                    return ing.name;
+                  }
+                })
+              : [],
+            instructions: Array.isArray(userRecipe.steps)
+              ? userRecipe.steps
+              : (userRecipe.instructions || []),
+            prep_time_minutes: userRecipe.prep_time || userRecipe.prep_time_minutes || 0,
+            cook_time_minutes: userRecipe.cook_time || userRecipe.cook_time_minutes || 0,
+            servings: userRecipe.servings || 4,
+            tags: userRecipe.tags || [],
+            cuisine: userRecipe.cuisine || 'Other',
+            difficulty: userRecipe.difficulty || 'Medium',
+          };
+          
+          setRecipe(formattedRecipe);
+          setServings(formattedRecipe.servings);
+          setLoading(false);
+          return; // Exit early if recipe was found
+        }
+      }
+      
+      // If not found in localStorage, check mock recipes
       const foundRecipe = MOCK_RECIPES.find(r => r.id === id);
       
       if (foundRecipe) {
@@ -153,7 +234,11 @@ const RecipeDetailPage = () => {
       }
       
       setLoading(false);
-    }, 500);
+    } catch (error) {
+      console.error('Error loading recipe:', error);
+      setError('Failed to load recipe');
+      setLoading(false);
+    }
   }, [id]);
 
   const handleAddToMealPlan = async () => {
@@ -455,6 +540,12 @@ const RecipeDetailPage = () => {
                   className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   Add to Shopping List
+                </Link>
+                <Link
+                  to={`/recipes/edit/${id}`}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                >
+                  Edit Recipe
                 </Link>
               </div>
             </div>

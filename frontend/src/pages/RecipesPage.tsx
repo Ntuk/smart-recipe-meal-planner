@@ -12,6 +12,7 @@ const MOCK_RECIPES = [
     title: 'Spaghetti Carbonara',
     description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
     ingredients: ['Spaghetti', 'Eggs', 'Pancetta', 'Parmesan cheese', 'Black pepper', 'Salt'],
+    instructions: ['Cook spaghetti according to package instructions', 'Mix eggs and cheese', 'Cook pancetta', 'Combine all ingredients'],
     prep_time_minutes: 10,
     cook_time_minutes: 15,
     servings: 4,
@@ -64,6 +65,29 @@ interface LocationState {
   selectedDay?: number;
 }
 
+// Helper function to convert from API recipe format to our app's Recipe format
+const convertApiRecipeToAppFormat = (apiRecipe: any): Recipe => {
+  return {
+    id: apiRecipe.id || `temp-${Date.now()}`,
+    title: apiRecipe.name || apiRecipe.title || 'Untitled Recipe',
+    description: apiRecipe.description || '',
+    ingredients: Array.isArray(apiRecipe.ingredients) 
+      ? apiRecipe.ingredients.map((ing: any) => 
+          typeof ing === 'string' ? ing : ing.name || ''
+        )
+      : [],
+    instructions: Array.isArray(apiRecipe.steps) 
+      ? apiRecipe.steps 
+      : (apiRecipe.instructions || []),
+    prep_time_minutes: apiRecipe.prep_time || apiRecipe.prep_time_minutes || 0,
+    cook_time_minutes: apiRecipe.cook_time || apiRecipe.cook_time_minutes || 0,
+    servings: apiRecipe.servings || 4,
+    tags: Array.isArray(apiRecipe.tags) ? apiRecipe.tags : [],
+    cuisine: apiRecipe.cuisine || 'Other',
+    difficulty: apiRecipe.difficulty || 'Medium',
+  };
+};
+
 const RecipesPage = () => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -75,6 +99,49 @@ const RecipesPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  // Check localStorage for user-created recipes when component mounts
+  useEffect(() => {
+    try {
+      const storedRecipesJson = localStorage.getItem('user_created_recipes');
+      if (storedRecipesJson) {
+        const storedRecipes = JSON.parse(storedRecipesJson);
+        if (Array.isArray(storedRecipes) && storedRecipes.length > 0) {
+          console.log('Found user-created recipes in localStorage:', storedRecipes);
+          
+          // Convert API format to our app's Recipe format and add to recipes state
+          const formattedRecipes = storedRecipes.map(convertApiRecipeToAppFormat);
+          setRecipes(prev => {
+            // Filter out any recipes that might be duplicates by ID
+            const existingIds = prev.map(r => r.id);
+            const newRecipes = formattedRecipes.filter(r => !existingIds.includes(r.id));
+            return [...prev, ...newRecipes];
+          });
+        }
+      }
+      
+      // Also check for the most recently created recipe
+      const lastCreatedRecipeJson = localStorage.getItem('last_created_recipe');
+      if (lastCreatedRecipeJson) {
+        const lastCreatedRecipe = JSON.parse(lastCreatedRecipeJson);
+        console.log('Found last created recipe in localStorage:', lastCreatedRecipe);
+        
+        // Convert to app format and add if it's not already in the list
+        const formattedRecipe = convertApiRecipeToAppFormat(lastCreatedRecipe);
+        setRecipes(prev => {
+          if (!prev.some(r => r.id === formattedRecipe.id)) {
+            return [...prev, formattedRecipe];
+          }
+          return prev;
+        });
+        
+        // Clear the last created recipe from localStorage to avoid duplication
+        localStorage.removeItem('last_created_recipe');
+      }
+    } catch (error) {
+      console.error('Error loading recipes from localStorage:', error);
+    }
+  }, []);
 
   // Get unique cuisines, difficulties, and tags from recipes
   const cuisines = [...new Set(recipes.map(recipe => recipe.cuisine))];

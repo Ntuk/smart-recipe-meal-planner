@@ -601,8 +601,8 @@ const MealPlanPage = () => {
                                       </span>
                                     </div>
                                     <p className="mt-1 text-sm text-gray-500">
-                                      {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} | 
-                                      {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} | 
+                                      {t('mealPlan.prepTime', 'Prep time')}: {recipe.prep_time} {t('mealPlan.minutes', 'minutes')} {` | `} 
+                                      {t('mealPlan.cookTime', 'Cook time')}: {recipe.cook_time} {t('mealPlan.minutes', 'minutes')} {` | `} 
                                       {t('mealPlan.servings', 'Servings')}: {recipe.servings}
                                     </p>
                                     <div className="mt-4">

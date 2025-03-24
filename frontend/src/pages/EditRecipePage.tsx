@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { recipeApiService } from '../services/api';
 import { toast } from 'react-hot-toast';
@@ -11,10 +10,10 @@ interface Ingredient {
   unit: string | null;
 }
 
-const CreateRecipePage: React.FC = () => {
+const EditRecipePage: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated } = useAuth();
   const { t } = useTranslation();
   
   // Initialize form state
@@ -27,41 +26,166 @@ const CreateRecipePage: React.FC = () => {
   const [cookTime, setCookTime] = useState('');
   const [servings, setServings] = useState('');
   const [tags, setTags] = useState('');
-  const [difficulty, setDifficulty] = useState('Easy');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [difficulty, setDifficulty] = useState('Easy');
   
-  // Check if a token exists regardless of its validity
-  const hasToken = () => {
-    // Temporarily return true to bypass authentication issues
-    return true;
-    // return !!localStorage.getItem('auth_token');
-  };
-  
-  // Get ingredients from location state if available
+  // Fetch recipe data when component mounts
   useEffect(() => {
-    console.log('Location state:', location.state);
-    if (location.state && location.state.ingredients) {
-      console.log('Setting ingredients from state:', location.state.ingredients);
-      setIngredients(location.state.ingredients);
+    if (!id) {
+      setError('Recipe ID is required');
+      setInitialLoading(false);
+      return;
     }
-  }, [location.state]);
-  
-  // No longer redirect if not authenticated - always allow recipe creation
-  useEffect(() => {
-    // Always allow access to this page
-    console.log('Token check bypassed for testing, proceeding with create recipe page');
-    setError(null);
     
-    // Original code:
-    // if (!hasToken()) {
-    //   console.log('No token found, showing login required message');
-    //   setError(t('auth.loginRequired'));
-    // } else {
-    //   console.log('Token found, proceeding with create recipe page');
-    //   setError(null);
-    // }
-  }, []);
+    const loadRecipe = async () => {
+      setInitialLoading(true);
+      
+      try {
+        // First check localStorage for the recipe
+        let foundRecipe: any = null;
+        
+        // Check in user_created_recipes
+        const userRecipesJson = localStorage.getItem('user_created_recipes');
+        if (userRecipesJson) {
+          const userRecipes = JSON.parse(userRecipesJson);
+          const userRecipe = userRecipes.find((r: any) => r.id === id);
+          
+          if (userRecipe) {
+            console.log('Found recipe in localStorage:', userRecipe);
+            foundRecipe = userRecipe;
+          }
+        }
+        
+        // If not found in localStorage, check mock recipes
+        if (!foundRecipe) {
+          // Try to get from API (would work in real implementation)
+          try {
+            // This would be the real implementation
+            // foundRecipe = await recipeApiService.getRecipe(id);
+            
+            // For demo, simulate fetching from a mock API
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Check if it's one of the mock recipes by ID
+            // This is just hardcoded for the demo - in real app would need proper mock data handling
+            if (id === '1') {
+              foundRecipe = {
+                id: '1',
+                name: 'Spaghetti Carbonara',
+                description: 'A classic Italian pasta dish with eggs, cheese, pancetta, and black pepper.',
+                ingredients: [
+                  { name: 'Spaghetti', quantity: '400', unit: 'g' },
+                  { name: 'Eggs', quantity: '4', unit: '' },
+                  { name: 'Pancetta', quantity: '150', unit: 'g' },
+                  { name: 'Parmesan cheese', quantity: '50', unit: 'g' },
+                  { name: 'Black pepper', quantity: '2', unit: 'tsp' },
+                  { name: 'Salt', quantity: '1', unit: 'tsp' }
+                ],
+                steps: [
+                  'Cook spaghetti according to package instructions.',
+                  'In a bowl, whisk eggs and grated cheese.',
+                  'Cook pancetta until crispy.',
+                  'Combine pasta, egg mixture, and pancetta. Toss quickly.',
+                  'Season with black pepper and serve immediately.'
+                ],
+                prep_time: 10,
+                cook_time: 15,
+                servings: 4,
+                tags: ['Italian', 'Pasta', 'Quick'],
+                cuisine: 'Italian',
+                difficulty: 'Easy',
+              };
+            } else if (id === '5') {
+              foundRecipe = {
+                id: '5',
+                name: 'Energizing fruit smoothie',
+                description: '',
+                ingredients: [
+                  { name: 'Frozen berries', quantity: '1', unit: 'cup' },
+                  { name: 'Banana', quantity: '1', unit: '' },
+                  { name: 'Yogurt', quantity: '1/2', unit: 'cup' },
+                  { name: 'Honey', quantity: '1', unit: 'tbsp' },
+                  { name: 'Orange juice', quantity: '1/2', unit: 'cup' }
+                ],
+                steps: [
+                  'Add all ingredients to a blender.',
+                  'Blend until smooth.',
+                  'Pour into a glass and enjoy immediately.'
+                ],
+                prep_time: 5,
+                cook_time: 0,
+                servings: 1,
+                tags: ['Breakfast', 'Smoothie', 'Quick', 'No-cook'],
+                cuisine: 'International',
+                difficulty: 'Easy',
+              };
+            }
+          } catch (err) {
+            console.error('Error fetching recipe from API:', err);
+          }
+        }
+        
+        if (!foundRecipe) {
+          setError('Recipe not found');
+          setInitialLoading(false);
+          return;
+        }
+        
+        // Set form values from recipe data
+        setTitle(foundRecipe.name || foundRecipe.title || '');
+        setDescription(foundRecipe.description || '');
+        
+        // Handle ingredients which might be an array of strings or objects
+        if (Array.isArray(foundRecipe.ingredients)) {
+          if (typeof foundRecipe.ingredients[0] === 'string') {
+            // Convert string ingredients to object format
+            setIngredients(foundRecipe.ingredients.map(ing => ({
+              name: ing,
+              quantity: null,
+              unit: null
+            })));
+          } else {
+            // Handle object format ingredients
+            setIngredients(foundRecipe.ingredients.map(ing => ({
+              name: ing.name || ing,
+              quantity: ing.quantity || null,
+              unit: ing.unit || null
+            })));
+          }
+        }
+        
+        // Handle instructions/steps
+        if (Array.isArray(foundRecipe.steps)) {
+          setInstructions(foundRecipe.steps.join('\n'));
+        } else if (Array.isArray(foundRecipe.instructions)) {
+          setInstructions(foundRecipe.instructions.join('\n'));
+        }
+        
+        // Set other fields
+        setPrepTime(String(foundRecipe.prep_time || foundRecipe.prep_time_minutes || ''));
+        setCookTime(String(foundRecipe.cook_time || foundRecipe.cook_time_minutes || ''));
+        setServings(String(foundRecipe.servings || ''));
+        
+        // Handle tags
+        if (Array.isArray(foundRecipe.tags)) {
+          setTags(foundRecipe.tags.join(', '));
+        }
+        
+        // Handle difficulty
+        setDifficulty(foundRecipe.difficulty || 'Easy');
+        
+      } catch (err) {
+        console.error('Error loading recipe for editing:', err);
+        setError('Failed to load recipe data.');
+      } finally {
+        setInitialLoading(false);
+      }
+    };
+    
+    loadRecipe();
+  }, [id]);
   
   const handleAddIngredient = () => {
     if (newIngredient.name.trim()) {
@@ -105,6 +229,10 @@ const CreateRecipePage: React.FC = () => {
     setError(null);
     
     try {
+      if (!id) {
+        throw new Error('Recipe ID is missing');
+      }
+      
       // Format the recipe data for the API
       const recipeData = {
         name: title,
@@ -119,28 +247,37 @@ const CreateRecipePage: React.FC = () => {
         cook_time: parseInt(cookTime) || 0,
         servings: parseInt(servings) || 1,
         tags: tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        difficulty: difficulty
+        difficulty: difficulty,
       };
       
-      console.log('Saving recipe to API:', recipeData);
+      console.log('Updating recipe with data:', recipeData);
       
-      // Call the API to save the recipe
-      const savedRecipe = await recipeApiService.createRecipe(recipeData);
-      console.log('Recipe saved successfully:', savedRecipe);
+      // Call the API to update the recipe
+      const updatedRecipe = await recipeApiService.updateRecipe(id, recipeData);
+      console.log('Recipe updated successfully:', updatedRecipe);
       
       // Show success message
-      toast.success('Recipe created successfully!');
+      toast.success('Recipe updated successfully!');
       
-      // Redirect to recipes page
-      navigate('/recipes');
+      // Navigate back to recipe detail
+      navigate(`/recipes/${id}`);
     } catch (err) {
-      console.error('Error creating recipe:', err);
-      setError(t('common.error'));
-      toast.error('Failed to create recipe. Please try again.');
+      console.error('Error updating recipe:', err);
+      setError(t('common.error', 'An error occurred'));
+      toast.error('Failed to update recipe. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+  
+  if (initialLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <span className="ml-3 text-gray-700">Loading recipe...</span>
+      </div>
+    );
+  }
   
   return (
     <div className="min-h-screen bg-gray-100">
@@ -148,9 +285,9 @@ const CreateRecipePage: React.FC = () => {
         <div className="px-4 py-6 sm:px-0">
           <div className="bg-white shadow overflow-hidden sm:rounded-lg">
             <div className="px-4 py-5 sm:px-6">
-              <h1 className="text-2xl font-bold text-gray-900">{t('recipes.createRecipe')}</h1>
+              <h1 className="text-2xl font-bold text-gray-900">{t('recipes.editRecipe', 'Edit Recipe')}</h1>
               <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                {t('recipes.createRecipeDescription', 'Fill in the details to create a new recipe')}
+                {t('recipes.editRecipeDescription', 'Update the details of your recipe')}
               </p>
             </div>
             
@@ -196,7 +333,7 @@ const CreateRecipePage: React.FC = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
-                    {t('recipes.ingredients')}
+                    {t('recipes.ingredients', 'Ingredients')}
                   </label>
                   
                   <div className="mt-2 space-y-2">
@@ -208,7 +345,7 @@ const CreateRecipePage: React.FC = () => {
                           onClick={() => handleRemoveIngredient(index)}
                           className="ml-2 text-red-600 hover:text-red-800"
                         >
-                          {t('common.delete')}
+                          {t('common.delete', 'Delete')}
                         </button>
                       </div>
                     ))}
@@ -227,7 +364,7 @@ const CreateRecipePage: React.FC = () => {
                     <div>
                       <input
                         type="text"
-                        placeholder={t('recipes.quantity')}
+                        placeholder={t('recipes.quantity', 'Quantity')}
                         value={newIngredient.quantity}
                         onChange={(e) => setNewIngredient({ ...newIngredient, quantity: e.target.value })}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
@@ -236,7 +373,7 @@ const CreateRecipePage: React.FC = () => {
                     <div>
                       <input
                         type="text"
-                        placeholder={t('recipes.unit')}
+                        placeholder={t('recipes.unit', 'Unit')}
                         value={newIngredient.unit}
                         onChange={(e) => setNewIngredient({ ...newIngredient, unit: e.target.value })}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
@@ -249,64 +386,62 @@ const CreateRecipePage: React.FC = () => {
                     onClick={handleAddIngredient}
                     className="mt-2 inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-indigo-700 bg-indigo-100 hover:bg-indigo-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                   >
-                    {t('recipes.addIngredient')}
+                    {t('recipes.addIngredient', 'Add Ingredient')}
                   </button>
                 </div>
                 
                 <div>
                   <label htmlFor="instructions" className="block text-sm font-medium text-gray-700">
-                    {t('recipes.instructions')}
+                    {t('recipes.instructions', 'Instructions')}
                   </label>
                   <div className="mt-1">
                     <textarea
                       id="instructions"
-                      rows={5}
+                      rows={6}
                       value={instructions}
                       onChange={(e) => setInstructions(e.target.value)}
+                      placeholder={t('recipes.instructionsPlaceholder', 'Enter each step on a new line')}
                       className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                      placeholder={t('recipes.instructionsPlaceholder', 'Enter step-by-step instructions')}
                     />
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-3">
                   <div>
-                    <label htmlFor="prep-time" className="block text-sm font-medium text-gray-700">
-                      {t('recipes.prepTime')}
+                    <label htmlFor="prepTime" className="block text-sm font-medium text-gray-700">
+                      {t('recipes.prepTime', 'Prep Time (minutes)')}
                     </label>
                     <div className="mt-1">
                       <input
                         type="number"
-                        id="prep-time"
+                        id="prepTime"
                         min="0"
                         value={prepTime}
                         onChange={(e) => setPrepTime(e.target.value)}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                        placeholder={t('recipes.minutes', 'Minutes')}
                       />
                     </div>
                   </div>
                   
                   <div>
-                    <label htmlFor="cook-time" className="block text-sm font-medium text-gray-700">
-                      {t('recipes.cookTime')}
+                    <label htmlFor="cookTime" className="block text-sm font-medium text-gray-700">
+                      {t('recipes.cookTime', 'Cook Time (minutes)')}
                     </label>
                     <div className="mt-1">
                       <input
                         type="number"
-                        id="cook-time"
+                        id="cookTime"
                         min="0"
                         value={cookTime}
                         onChange={(e) => setCookTime(e.target.value)}
                         className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                        placeholder={t('recipes.minutes', 'Minutes')}
                       />
                     </div>
                   </div>
                   
                   <div>
                     <label htmlFor="servings" className="block text-sm font-medium text-gray-700">
-                      {t('recipes.servings')}
+                      {t('recipes.servings', 'Servings')}
                     </label>
                     <div className="mt-1">
                       <input
@@ -332,8 +467,8 @@ const CreateRecipePage: React.FC = () => {
                         id="tags"
                         value={tags}
                         onChange={(e) => setTags(e.target.value)}
-                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                         placeholder={t('recipes.tagsPlaceholder', 'e.g., Italian, Pasta, Quick (comma separated)')}
+                        className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                       />
                     </div>
                   </div>
@@ -361,17 +496,17 @@ const CreateRecipePage: React.FC = () => {
                   <div className="flex justify-end">
                     <button
                       type="button"
-                      onClick={() => navigate('/recipes')}
+                      onClick={() => navigate(`/recipes/${id}`)}
                       className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
-                      {t('common.cancel')}
+                      {t('common.cancel', 'Cancel')}
                     </button>
                     <button
                       type="submit"
                       disabled={loading}
                       className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
                     >
-                      {loading ? t('common.loading') : t('common.save')}
+                      {loading ? t('common.loading', 'Loading...') : t('common.save', 'Save')}
                     </button>
                   </div>
                 </div>
@@ -384,4 +519,4 @@ const CreateRecipePage: React.FC = () => {
   );
 };
 
-export default CreateRecipePage; 
+export default EditRecipePage; 
