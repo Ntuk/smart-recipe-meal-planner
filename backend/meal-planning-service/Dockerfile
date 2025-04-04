@@ -2,13 +2,17 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY meal-planning-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create directory for Prometheus metrics
 RUN mkdir -p /tmp && chmod 777 /tmp
 
-COPY . .
+# Copy the shared module first
+COPY shared /app/shared
+
+# Copy the service code
+COPY meal-planning-service/app /app/app
 
 EXPOSE 8003 9093
 

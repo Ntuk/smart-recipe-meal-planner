@@ -121,7 +121,9 @@ services:
 
   # Meal Planning Service
   meal-planning-service:
-    build: ./backend/meal-planning-service
+    build:
+      context: ./backend
+      dockerfile: meal-planning-service/Dockerfile
     container_name: meal-planning-service
     restart: always
     ports:

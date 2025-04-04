@@ -9,4 +9,4 @@ pika==1.2.0
 prometheus-client==0.19.0
 python-jose==3.3.0
 nest-asyncio==1.5.6
-prometheus-fastapi-instrumentator==5.7.1 
+prometheus-fastapi-instrumentator==6.1.0 
