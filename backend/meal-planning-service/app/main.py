@@ -8,6 +8,18 @@ from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from .routers import meal_plans
 from shared import rabbitmq_utils
+from pydantic import BaseModel
+from typing import List, Optional, Dict
+from datetime import datetime
+from dotenv import load_dotenv
+import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import Response
+import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import threading
+import uvicorn
 
 # Configure logging
 logging.basicConfig(
@@ -60,4 +72,39 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(meal_plans.router, prefix="/api/v1/meal-plans", tags=["meal-plans"]) 
+app.include_router(meal_plans.router, prefix="/api/v1/meal-plans", tags=["meal-plans"])
+
+# Port Configuration
+PORT = int(os.getenv("PORT", "8003"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "9093"))
+
+# Prometheus metrics
+REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('meal_planning_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
+PLAN_OPERATIONS = Counter('meal_planning_service_operations_total', 'Total meal plan operations', ['operation', 'status'])
+
+# Load environment variables
+load_dotenv()
+
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+RECIPE_SERVICE_URL = os.getenv("RECIPE_SERVICE_URL", "http://recipe-service:8001")
+
+# Initialize metrics app
+metrics_app = FastAPI()
+
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(metrics_app)
+
+# Start metrics server in a separate thread
+def run_metrics_server():
+    uvicorn.run(metrics_app, host="0.0.0.0", port=METRICS_PORT)
+
+# Start the metrics server in a background thread when the app starts
+@app.on_event("startup")
+async def startup_event():
+    metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+    metrics_thread.start()
+    logger.info(f"Metrics server started on port {METRICS_PORT}") 

@@ -13,11 +13,18 @@ import uuid
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from fastapi.responses import Response
 import time
+from prometheus_fastapi_instrumentator import Instrumentator
+import uvicorn
+import threading
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Port Configuration
+PORT = int(os.getenv("PORT", "8000"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
 
 # Prometheus metrics
 REQUESTS = Counter('auth_service_requests_total', 'Total requests to the auth service', ['method', 'endpoint', 'status'])
@@ -45,6 +52,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Initialize FastAPI app
 app = FastAPI(title="Auth Service", description="Authentication service for Smart Recipe & Meal Planner")
+
+# Initialize metrics app
+metrics_app = FastAPI()
+
+# Initialize Prometheus instrumentation
+Instrumentator().instrument(app).expose(metrics_app)
 
 # Add CORS middleware
 app.add_middleware(
@@ -345,4 +358,15 @@ async def get_all_users():
             created_at=document["created_at"],
             preferences=document.get("preferences", {})
         ))
-    return users 
+    return users
+
+# Start metrics server in a separate thread
+def run_metrics_server():
+    uvicorn.run(metrics_app, host="0.0.0.0", port=METRICS_PORT)
+
+# Start the metrics server in a background thread when the app starts
+@app.on_event("startup")
+async def startup_event():
+    metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+    metrics_thread.start()
+    logger.info(f"Metrics server started on port {METRICS_PORT}") 

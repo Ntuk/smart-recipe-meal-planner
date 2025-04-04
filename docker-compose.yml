@@ -66,13 +66,16 @@ services:
     restart: always
     ports:
       - "8000:8000"
-      - "9090:9090"  # Prometheus metrics port
+      - "9090:9090"
     environment:
       - MONGO_URI=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
       - SECRET_KEY=your-secret-key-for-development
+      - METRICS_PORT=9090
     depends_on:
       mongodb:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks:
       - recipe-network
@@ -83,18 +86,15 @@ services:
     container_name: recipe-service
     restart: always
     ports:
-      - "8001:8000"
-      - "9091:9090"  # Prometheus metrics port
+      - "8001:8001"
+      - "9091:9091"
     environment:
       - MONGO_URI=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
-      - AUTH_SERVICE_URL=http://auth-service:8000
-      - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
+      - METRICS_PORT=9091
     depends_on:
       mongodb:
-        condition: service_started
-      auth-service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
@@ -106,18 +106,14 @@ services:
     container_name: ingredient-scanner-service
     restart: always
     ports:
-      - "8002:8000"
-      - "9092:9090"  # Prometheus metrics port
+      - "8002:8002"
+      - "9092:9092"
     environment:
       - MONGO_URI=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
-      - AUTH_SERVICE_URL=http://auth-service:8000
-      - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
       mongodb:
-        condition: service_started
-      auth-service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
@@ -129,23 +125,15 @@ services:
     container_name: meal-planning-service
     restart: always
     ports:
-      - "8003:8000"
-      - "9093:9090"  # Prometheus metrics port
+      - "8003:8003"
+      - "9093:9093"
     environment:
-      - MONGODB_URL=mongodb://admin:password@mongodb:27017
+      - MONGO_URI=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
-      - AUTH_SERVICE_URL=http://auth-service:8000
-      - RECIPE_SERVICE_URL=http://recipe-service:8000
-      - RABBITMQ_URL=amqp://admin:password@rabbitmq:5672
-    volumes:
-      - ./backend/shared:/app/shared
+      - METRICS_PORT=9093
     depends_on:
       mongodb:
-        condition: service_started
-      auth-service:
-        condition: service_started
-      recipe-service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:
@@ -157,21 +145,14 @@ services:
     container_name: shopping-list-service
     restart: always
     ports:
-      - "8004:8000"
-      - "9094:9090"  # Prometheus metrics port
+      - "8004:8004"
+      - "9094:9094"
     environment:
       - MONGO_URI=mongodb://admin:password@mongodb:27017
       - DB_NAME=recipe_app
-      - AUTH_SERVICE_URL=http://auth-service:8000
-      - MEAL_PLANNING_SERVICE_URL=http://meal-planning-service:8000
-      - RABBITMQ_URI=amqp://admin:password@rabbitmq:5672
     depends_on:
       mongodb:
-        condition: service_started
-      auth-service:
-        condition: service_started
-      meal-planning-service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     networks:

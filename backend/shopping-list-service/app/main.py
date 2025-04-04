@@ -27,12 +27,9 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# MongoDB Configuration
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
-DB_NAME = os.getenv("DB_NAME", "recipe_app")
-AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
-MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://meal-planning-service:8000")
-RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
+# Port Configuration
+PORT = int(os.getenv("PORT", "8004"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "9094"))
 
 # Prometheus metrics
 REQUESTS = Counter('shopping_list_service_requests_total', 'Total requests to the shopping list service', ['method', 'endpoint', 'status'])
@@ -40,11 +37,21 @@ REQUEST_LATENCY = Histogram('shopping_list_service_request_duration_seconds', 'R
 LIST_OPERATIONS = Counter('shopping_list_service_operations_total', 'Total shopping list operations', ['operation', 'status'])
 MEAL_PLAN_SERVICE_LATENCY = Histogram('shopping_list_service_meal_plan_service_duration_seconds', 'Meal plan service request latency in seconds', ['operation'])
 
+# MongoDB Configuration
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://admin:password@mongodb:27017")
+DB_NAME = os.getenv("DB_NAME", "recipe_app")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:8000")
+MEAL_PLANNING_SERVICE_URL = os.getenv("MEAL_PLANNING_SERVICE_URL", "http://meal-planning-service:8000")
+RABBITMQ_URI = os.getenv("RABBITMQ_URI", "amqp://admin:password@rabbitmq:5672/")
+
 # Initialize FastAPI app
 app = FastAPI(title="Shopping List Service", description="Service for managing shopping lists")
 
+# Initialize metrics app
+metrics_app = FastAPI()
+
 # Initialize Prometheus instrumentation
-Instrumentator().instrument(app).expose(app)
+Instrumentator().instrument(app).expose(metrics_app)
 
 # Security
 security = HTTPBearer()
@@ -576,4 +583,15 @@ async def delete_shopping_list(shopping_list_id: str, current_user: dict = Depen
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"} 
+    return {"status": "healthy"}
+
+# Start metrics server in a separate thread
+def run_metrics_server():
+    uvicorn.run(metrics_app, host="0.0.0.0", port=METRICS_PORT)
+
+# Start the metrics server in a background thread when the app starts
+@app.on_event("startup")
+async def startup_event():
+    metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+    metrics_thread.start()
+    logger.info(f"Metrics server started on port {METRICS_PORT}") 

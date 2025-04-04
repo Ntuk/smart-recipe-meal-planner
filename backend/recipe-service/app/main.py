@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # Port Configuration
-PORT = int(os.getenv("PORT", "8000"))
-METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
+PORT = int(os.getenv("PORT", "8001"))
+METRICS_PORT = int(os.getenv("METRICS_PORT", "9091"))
 
 # Prometheus metrics
 REQUESTS = Counter('recipe_service_requests_total', 'Total requests to the recipe service', ['method', 'endpoint', 'status'])
@@ -81,7 +81,12 @@ async def monitor_requests(request, call_next):
 def run_metrics_server():
     uvicorn.run(metrics_app, host="0.0.0.0", port=METRICS_PORT)
 
-threading.Thread(target=run_metrics_server, daemon=True).start()
+# Start the metrics server in a background thread when the app starts
+@app.on_event("startup")
+async def startup_event():
+    metrics_thread = threading.Thread(target=run_metrics_server, daemon=True)
+    metrics_thread.start()
+    logger.info(f"Metrics server started on port {METRICS_PORT}")
 
 # Security
 security = HTTPBearer()
