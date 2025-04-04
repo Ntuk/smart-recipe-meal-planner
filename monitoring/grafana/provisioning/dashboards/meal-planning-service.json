@@ -86,7 +86,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(meal_plan_operations_total[5m])",
+          "expr": "rate(meal_planning_service_operations_total[5m])",
           "interval": "",
           "legendFormat": "{{operation}} {{status}}",
           "refId": "A"
@@ -190,72 +190,6 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 70
-              },
-              {
-                "color": "green",
-                "value": 90
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 8
-      },
-      "id": 3,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      },
-      "pluginVersion": "10.1.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "nutrition_goals_met",
-          "interval": "",
-          "legendFormat": "{{user_id}} {{plan_id}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Nutrition Goals Met",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
             "mode": "palette-classic"
           },
           "custom": {
@@ -304,10 +238,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 8
       },
-      "id": 4,
+      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -391,10 +325,10 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 16
+        "x": 12,
+        "y": 8
       },
-      "id": 5,
+      "id": 4,
       "options": {
         "legend": {
           "calcs": [],
@@ -471,17 +405,18 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "s"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 16
       },
-      "id": 6,
+      "id": 5,
       "options": {
         "legend": {
           "calcs": [],
@@ -524,6 +459,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "Meal Planning Service Overview",
-  "version": 0,
+  "uid": "meal-planning-service",
+  "version": 1,
   "weekStart": ""
 } 

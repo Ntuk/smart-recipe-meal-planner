@@ -397,7 +397,7 @@ async def create_shopping_list(
         logger.info(f"Created shopping list with ID: {shopping_list_data['id']}")
         
         # Publish event to RabbitMQ in a separate thread to avoid event loop issues
-        def publish_event():
+        async def publish_event():
             try:
                 event_data = {
                     "shopping_list_id": shopping_list_data["id"],
@@ -405,17 +405,18 @@ async def create_shopping_list(
                     "event_type": "created"
                 }
                 
-                if not rabbitmq_client.publish_message(
+                success = await rabbitmq_client.publish_message(
                     exchange_name="shopping_lists",
                     routing_key="shopping_list.created",
                     message=event_data
-                ):
+                )
+                if not success:
                     logger.warning("Failed to publish shopping list created event")
             except Exception as e:
                 logger.error(f"Error publishing event: {str(e)}")
         
-        # Run the RabbitMQ publish in a thread
-        threading.Thread(target=publish_event, daemon=True).start()
+        # Run the RabbitMQ publish in the background
+        asyncio.create_task(publish_event())
         
         return shopping_list_data
         

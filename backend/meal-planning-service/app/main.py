@@ -4,7 +4,7 @@ from shared.fastapi_app import create_app
 from shared.logging_config import setup_logging
 from fastapi import FastAPI, HTTPException, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from motor.motor_asyncio import AsyncIOMotorClient
 from .routers import meal_plans
 from shared import rabbitmq_utils
@@ -14,9 +14,6 @@ from datetime import datetime
 from dotenv import load_dotenv
 import httpx
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-from fastapi.responses import Response
-import time
 from prometheus_fastapi_instrumentator import Instrumentator
 import threading
 import uvicorn
@@ -77,11 +74,6 @@ app.include_router(meal_plans.router, prefix="/api/v1/meal-plans", tags=["meal-p
 # Port Configuration
 PORT = int(os.getenv("PORT", "8003"))
 METRICS_PORT = int(os.getenv("METRICS_PORT", "9093"))
-
-# Prometheus metrics
-REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
-REQUEST_LATENCY = Histogram('meal_planning_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
-PLAN_OPERATIONS = Counter('meal_planning_service_operations_total', 'Total meal plan operations', ['operation', 'status'])
 
 # Load environment variables
 load_dotenv()

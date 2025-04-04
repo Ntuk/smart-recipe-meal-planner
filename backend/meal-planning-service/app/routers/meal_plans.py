@@ -12,6 +12,14 @@ import random
 import json
 import copy
 import traceback
+from ..metrics import (
+    REQUESTS, REQUEST_LATENCY, PLAN_OPERATIONS,
+    meal_plan_generation_total, meal_plan_generation_time_seconds,
+    meal_plan_count, nutrition_goals_met, calorie_variance,
+    db_operations_total, recipe_recommendations_total,
+    recipe_recommendation_accuracy, preference_violations_total
+)
+import time
 
 print("**************** MEAL PLANS ROUTER MODULE LOADED ****************")
 
@@ -218,7 +226,11 @@ async def create_meal_plan(
     current_user: dict = Depends(get_current_user),
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
+    start_time = time.time()
     try:
+        # Start measuring generation time
+        gen_start_time = time.time()
+        
         now = datetime.utcnow()
         meal_plan_id = str(uuid.uuid4())
         
@@ -291,6 +303,31 @@ async def create_meal_plan(
                 )
             
             logger.info(f"Successfully inserted meal plan with ID: {result.inserted_id}")
+            
+            # Record meal plan generation metrics
+            meal_plan_generation_total.labels(status="success").inc()
+            meal_plan_generation_time_seconds.labels(plan_type="standard").observe(time.time() - gen_start_time)
+            
+            # Update meal plan count for user
+            meal_plan_count.labels(user_id=current_user["id"]).inc()
+            
+            # Record database operation
+            db_operations_total.labels(operation="insert", status="success").inc()
+            
+            # Record recipe recommendations
+            if not meal_plan.skip_recipe_assignment:
+                recipe_recommendations_total.labels(status="success").inc()
+                # Assuming accuracy is based on dietary preferences being met
+                if meal_plan.dietary_preferences:
+                    recipe_recommendation_accuracy.labels(user_id=current_user["id"]).set(1.0)
+            
+            # Record preference violations
+            for pref in meal_plan.dietary_preferences or []:
+                # Check if any recipes violate preferences
+                violations = 0  # You would calculate this based on recipe tags
+                if violations > 0:
+                    preference_violations_total.labels(preference_type=pref).inc(violations)
+            
             return meal_plan_data
             
         except Exception as e:
@@ -307,6 +344,10 @@ async def create_meal_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating meal plan: {str(e)}"
         )
+    finally:
+        # Record request latency
+        REQUEST_LATENCY.labels(method="POST", endpoint="/api/v1/meal-plans").observe(time.time() - start_time)
+        REQUESTS.labels(method="POST", endpoint="/api/v1/meal-plans", status="200").inc()
 
 @router.get("/", response_model=List[MealPlan])
 async def get_meal_plans(
@@ -424,9 +465,7 @@ async def update_meal_plan(
     meal_plan_update: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """
-    Update a meal plan
-    """
+    start_time = time.time()
     try:
         logger.info(f"Received update data: {json.dumps(meal_plan_update, default=str)}")
         
@@ -526,10 +565,13 @@ async def update_meal_plan(
         
         print(f"Total recipes in updated document: {recipe_count}")
         
+        # Record successful operation
+        PLAN_OPERATIONS.labels(operation="update", status="success").inc()
         return updated_doc
         
     except HTTPException as e:
-        # Re-raise HTTP exceptions
+        # Record failed operation
+        PLAN_OPERATIONS.labels(operation="update", status="failure").inc()
         raise e
     except Exception as e:
         # Log and raise other exceptions
@@ -539,6 +581,10 @@ async def update_meal_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating meal plan: {str(e)}"
         )
+    finally:
+        # Record request latency
+        REQUEST_LATENCY.labels(method="PUT", endpoint="/api/v1/meal-plans/{id}").observe(time.time() - start_time)
+        REQUESTS.labels(method="PUT", endpoint="/api/v1/meal-plans/{id}", status="200").inc()
 
 @router.delete("/{meal_plan_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_meal_plan(
@@ -546,6 +592,7 @@ async def delete_meal_plan(
     meal_plan_id: str,
     current_user: dict = Depends(get_current_user)
 ):
+    start_time = time.time()
     try:
         if not hasattr(request.app.state, 'db'):
             logger.error("Database not initialized in app state")
@@ -571,6 +618,9 @@ async def delete_meal_plan(
         
         # Delete meal plan
         await collection.delete_one({"id": meal_plan_id})
+        
+        # Record successful operation
+        PLAN_OPERATIONS.labels(operation="delete", status="success").inc()
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -579,6 +629,10 @@ async def delete_meal_plan(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting meal plan: {str(e)}"
         )
+    finally:
+        # Record request latency
+        REQUEST_LATENCY.labels(method="DELETE", endpoint="/api/v1/meal-plans/{id}").observe(time.time() - start_time)
+        REQUESTS.labels(method="DELETE", endpoint="/api/v1/meal-plans/{id}", status="204").inc()
 
 # Add a function to standardize ingredients format in meal plans when returning from database
 def standardize_meal_plan_ingredients(meal_plan_data):

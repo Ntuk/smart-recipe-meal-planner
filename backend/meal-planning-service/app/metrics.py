@@ -92,6 +92,11 @@ preference_violations_total = Counter(
     ["preference_type"]
 )
 
+# Prometheus metrics
+REQUESTS = Counter('meal_planning_service_requests_total', 'Total requests to the meal planning service', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('meal_planning_service_request_duration_seconds', 'Request latency in seconds', ['method', 'endpoint'])
+PLAN_OPERATIONS = Counter('meal_planning_service_operations_total', 'Total meal plan operations', ['operation', 'status'])
+
 def init_metrics(app):
     """Initialize Prometheus metrics for the FastAPI application."""
     Instrumentator().instrument(app).expose(app) 
