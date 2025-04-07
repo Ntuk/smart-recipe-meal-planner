@@ -12,6 +12,23 @@ The Smart Recipe & Meal Planner is designed to solve a common problem: "What can
 - Create shopping lists for missing ingredients
 - Manage user authentication and profiles
 
+## Project Structure
+
+The project is organized into the following main directories:
+
+- **`/frontend`**: Contains the React-based user interface code.
+- **`/backend`**: Contains the Python-based microservices, each in its own subdirectory:
+    - `auth-service`
+    - `ingredient-scanner-service`
+    - `meal-planning-service`
+    - `recipe-service`
+    - `shopping-list-service`
+    - `shared` (Contains shared utilities or modules used across backend services)
+- **`/monitoring`**: Contains configuration files for Prometheus and Grafana.
+- **`/nginx`**: Contains Nginx configuration for the API Gateway.
+- **`docker-compose.yml`**: Defines and orchestrates all the services.
+- **`start-dev.sh`**: Helper script for setting up and running the development environment.
+
 ## Domain-Driven Design
 
 The Smart Recipe & Meal Planner implements Domain-Driven Design (DDD) principles with the following bounded contexts and their corresponding microservices:
@@ -239,7 +256,7 @@ The script will:
    - Prometheus: http://localhost:9095
    - RabbitMQ Management UI: http://localhost:15672 (default credentials: admin/password)
 
-Note: The monitoring stack (Prometheus and Grafana) is included when using the `--monitor` flag. This will enable metrics collection and visualization for all services.
+Note: The monitoring stack (Prometheus and Grafana) is included when using the `--monitor` flag. This will enable metrics collection and visualization for all services. The default credentials provided for Grafana and RabbitMQ are for development purposes only and should be changed for production environments.
 
 ### Service Ports
 
