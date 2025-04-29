@@ -18,7 +18,11 @@ services:
         soft: 64000
         hard: 64000
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: [
+        "CMD", "mongosh",
+        "mongodb://admin:password@localhost:27017/admin",
+        "--eval", "db.adminCommand('ping')"
+      ]
       interval: 10s
       timeout: 5s
       retries: 5
